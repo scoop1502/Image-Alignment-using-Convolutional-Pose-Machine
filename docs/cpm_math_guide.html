@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The CPM Keypoint Model — Mathematics and Implementation</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+  :root {
+    --ink:#1a1d21; --muted:#5b6472; --rule:#d4d9e0; --accent:#1f4e79;
+    --warn-bg:#fdf6e3; --warn-br:#c9a227; --note-bg:#eef4fa; --note-br:#1f4e79;
+    --ok-bg:#eef7ef; --ok-br:#2e7d43; --code-bg:#f5f6f8;
+  }
+  * { box-sizing:border-box; }
+  body { font-family:"Charter","Georgia","Cambria",serif; font-size:10.2pt;
+         line-height:1.5; color:var(--ink); margin:0; }
+  h1,h2,h3,h4 { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+                color:var(--accent); line-height:1.25; margin:0 0 .4em 0; break-after:avoid; }
+  h1 { font-size:21pt; letter-spacing:-.01em; }
+  h2 { font-size:13.5pt; margin-top:1.6em; padding-bottom:.25em; border-bottom:1.5px solid var(--accent); }
+  h3 { font-size:11.2pt; margin-top:1.3em; color:var(--ink); }
+  h4 { font-family:"Segoe UI",Arial,sans-serif; font-size:8.6pt; margin-top:1em;
+       color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  p { margin:0 0 .7em 0; }
+  ul,ol { margin:0 0 .8em 0; padding-left:1.3em; }
+  li { margin-bottom:.3em; }
+  .tight li { margin-bottom:.12em; }
+  code,pre,.mono { font-family:"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace; }
+  code { font-size:8.8pt; background:var(--code-bg); padding:.1em .3em; border-radius:2px; }
+  pre { font-size:8.2pt; line-height:1.45; background:var(--code-bg); border:1px solid var(--rule);
+        border-left:3px solid var(--accent); border-radius:3px; padding:.7em .9em;
+        white-space:pre-wrap; word-break:break-word; margin:.6em 0 .9em 0; break-inside:avoid; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  table { width:100%; border-collapse:collapse; font-size:8.8pt; margin:.6em 0 1em 0; break-inside:avoid; }
+  th,td { border:1px solid var(--rule); padding:.36em .55em; text-align:left; vertical-align:top; }
+  th { background:#eaeef3; font-family:"Segoe UI",Arial,sans-serif; font-size:8.4pt; font-weight:600; }
+  td.mono,th.mono,td.num { font-family:"Cascadia Mono",Consolas,monospace; font-size:8.2pt; }
+  td.num { text-align:right; }
+  tbody tr:nth-child(even) { background:#fafbfc; }
+  .callout { background:var(--note-bg); border-left:3px solid var(--note-br); padding:.6em .9em;
+             margin:.8em 0; font-size:9.4pt; break-inside:avoid; }
+  .callout.warn { background:var(--warn-bg); border-left-color:var(--warn-br); }
+  .callout.ok { background:var(--ok-bg); border-left-color:var(--ok-br); }
+  .callout .label { display:block; font-family:"Segoe UI",Arial,sans-serif; font-size:8pt;
+                    font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+                    margin-bottom:.25em; color:var(--note-br); }
+  .callout.warn .label { color:#8a6d1a; }
+  .callout.ok .label { color:#2e7d43; }
+  .eq { text-align:center; font-size:10.4pt; margin:.9em 0; line-height:1.9;
+        break-inside:avoid; font-family:"Charter","Georgia",serif; }
+  .eq .v { font-style:italic; }
+  .eq .n { font-style:normal; }
+  .eqbox { background:#fff; border:1px solid var(--rule); border-radius:3px;
+           padding:.7em .9em; margin:.8em 0; break-inside:avoid; }
+  .eqnum { float:right; color:var(--muted); font-size:9pt; font-style:normal; }
+  .titleblock { border-bottom:2.5px solid var(--accent); padding-bottom:.9em; margin-bottom:1.3em; }
+  .subtitle { color:var(--muted); font-size:11pt; margin:.2em 0 .7em 0; }
+  .meta { font-size:8.4pt; color:var(--muted); font-family:"Segoe UI",Arial,sans-serif; }
+  .meta span { margin-right:1.4em; }
+  .toc { font-size:9.2pt; columns:2; column-gap:2em; }
+  .toc ol { padding-left:1.4em; margin:0; }
+  .toc li { margin-bottom:.2em; }
+  .pagebreak { break-before:page; }
+  .measured { font-size:8pt; color:var(--muted); font-style:italic; margin:-.5em 0 1em 0; }
+  sub,sup { font-size:.72em; }
+</style>
+</head>
+<body>
+
+<div class="titleblock">
+  <h1>The CPM Keypoint Model</h1>
+  <div class="subtitle">Mathematics and implementation of <span class="mono">cpm_model_v2.py</span>,
+  <span class="mono">insect_dataset.py</span> and <span class="mono">train_heatmap.py</span>,
+  and how inference inverts them</div>
+  <div class="meta">
+    <span><strong>Project:</strong> c:\alignment</span>
+    <span><strong>Architecture:</strong> Convolutional Pose Machine, 6 stages, k = 5</span>
+    <span><strong>Date:</strong> 28 July 2026</span>
+  </div>
+</div>
+
+<p style="font-size:9.2pt; color:var(--muted); margin-bottom:1.2em;">
+Every numerical quantity in this document — parameter counts, tensor shapes, receptive fields,
+loss values, quantisation errors — was measured by executing the code in this repository against
+the trained checkpoint <span class="mono">epoch-latest.pth</span>, not taken from the CPM paper.
+Figures marked <em>measured</em> can be reproduced with the snippets shown.
+</p>
+
+<div class="toc">
+<ol>
+  <li>The central design decision</li>
+  <li>Encoding: coordinates → heatmaps</li>
+  <li>The architecture</li>
+  <li>Receptive fields: why six stages</li>
+  <li>Training</li>
+  <li>Decoding: heatmaps → coordinates</li>
+  <li>A complete worked example</li>
+  <li>Verified issues</li>
+</ol>
+</div>
+
+<h2>1. The central design decision</h2>
+
+<p>The task is: given a 224×224 image of an insect, output the pixel locations of five anatomical
+landmarks. The obvious formulation is direct regression — a network ending in a fully-connected
+layer emitting ten numbers, trained with an <span class="mono">L1</span> or <span class="mono">L2</span>
+loss on coordinates. Your repository contains exactly that approach in
+<span class="mono">dataset.py</span> and <span class="mono">train.py</span>, and it was abandoned in
+favour of the heatmap formulation in <span class="mono">insect_dataset.py</span> and
+<span class="mono">train_heatmap.py</span>. Three mathematical reasons justify that choice.</p>
+
+<h4>Reason 1 — Direct regression destroys spatial structure</h4>
+
+<p>A convolutional feature map is <em>equivariant</em> to translation: shifting the input shifts the
+features. Formally, if <span class="v">T</span><sub>δ</sub> is translation by δ and
+<span class="v">f</span> is a convolutional stack, then</p>
+
+<div class="eq"><span class="v">f</span>(<span class="v">T</span><sub>δ</sub> <span class="v">x</span>) = <span class="v">T</span><sub>δ/s</sub> <span class="v">f</span>(<span class="v">x</span>)</div>
+
+<p>for stride <span class="v">s</span>. A flatten-then-dense head discards this: the network must
+relearn, for every output unit, the relationship between feature position and coordinate value.
+A heatmap head preserves equivariance exactly — moving the landmark moves its predicted blob,
+with no parameters spent on the correspondence.</p>
+
+<h4>Reason 2 — Regression cannot express uncertainty or multimodality</h4>
+
+<p>Suppose the network is genuinely unsure between two plausible locations
+<span class="v">p</span><sub>1</sub> and <span class="v">p</span><sub>2</sub>. Under a squared-error
+coordinate loss the optimal single output is the conditional mean:</p>
+
+<div class="eq">
+<span class="v">p</span>* = arg min<sub><span class="v">p</span></sub> 𝔼[‖<span class="v">p</span> − <span class="v">y</span>‖²] = 𝔼[<span class="v">y</span>] = ½(<span class="v">p</span><sub>1</sub> + <span class="v">p</span><sub>2</sub>)
+</div>
+
+<p>— the midpoint, which may be anatomically meaningless. A heatmap can place mass on both
+hypotheses and let the decoder or a downstream consumer resolve them. It also yields a confidence
+signal for free (the peak height), which is what the <span class="mono">score</span> column of the
+inference CSV reports.</p>
+
+<h4>Reason 3 — Dense supervision</h4>
+
+<p>Coordinate regression provides 10 scalars of training signal per image. The heatmap formulation
+provides 6 × 28 × 28 = <strong>4,704</strong> supervised values per image. Every spatial position
+receives a gradient at every step, which is why heatmap methods converge from far less data — a
+decisive advantage with 599 training images.</p>
+
+<div class="callout">
+  <span class="label">The consequence</span>
+  Everything that follows is a consequence of this one decision. The dataset must <em>encode</em>
+  coordinates into heatmaps (Section 2), the network is an image-to-image map rather than an image-to-vector
+  map (Section 3), the loss is pixel-wise MSE rather than coordinate error (Section 5), and inference must
+  <em>decode</em> heatmaps back into coordinates (Section 6). The pipeline is a bijection sandwich:
+  <span class="mono">decode ∘ network ∘ encode</span><sup>−1</sup>.
+</div>
+
+<h2>2. Encoding: coordinates → heatmaps</h2>
+
+<p>Implemented in <span class="mono">insect_dataset.py</span>, lines 136–158.</p>
+
+<h3>2.1 Geometric normalisation</h3>
+
+<p>Let the annotated landmark be at <span class="v">(X, Y)</span> in original image pixels and the
+annotated box be <span class="v">(x</span><sub>1</sub><span class="v">, y</span><sub>1</sub><span class="v">, x</span><sub>2</sub><span class="v">, y</span><sub>2</sub><span class="v">)</span>.
+Three operations map it into the network's frame (lines 104–116):</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(1)</span>
+translate: &nbsp; (<span class="v">x</span><sub>c</sub>, <span class="v">y</span><sub>c</sub>) = (<span class="v">X</span> − <span class="v">x</span><sub>1</sub>, &nbsp; <span class="v">Y</span> − <span class="v">y</span><sub>1</sub>)
+</div>
+<div class="eq"><span class="eqnum">(2)</span>
+scale: &nbsp; <span class="v">s</span> = min( 224 / <span class="v">w</span><sub>crop</sub>, &nbsp; 224 / <span class="v">h</span><sub>crop</sub> )
+</div>
+<div class="eq"><span class="eqnum">(3)</span>
+normalise: &nbsp; (<span class="v">u</span>, <span class="v">v</span>) = (<span class="v">s·x</span><sub>c</sub> / 224, &nbsp; <span class="v">s·y</span><sub>c</sub> / 224) ∈ [0,1]²
+</div>
+</div>
+
+<p>The <span class="n">min</span> in (2) preserves aspect ratio; the shorter side is then
+zero-padded on the bottom and right (lines 119–120) to fill the 224×224 canvas. Padding at the
+bottom-right rather than symmetrically is what keeps the origin at (0,0) and makes the inverse
+transform in Section 6.2 a pure affine map with no padding offset.</p>
+
+<h3>2.2 Discretisation to the heatmap grid</h3>
+
+<p>The network predicts on a coarser lattice. With <span class="mono">stride = 224 // 28 = 8</span>,
+the grid is 28×28 and the landmark's cell is (line 140–141):</p>
+
+<div class="eq">
+<span class="v">c</span><sub>x</sub> = ⌊ <span class="v">u</span> · 28 ⌋, &nbsp;&nbsp;&nbsp;
+<span class="v">c</span><sub>y</sub> = ⌊ <span class="v">v</span> · 28 ⌋
+</div>
+
+<p>The floor is a lossy step and it is the first hard limit on achievable accuracy. It is quantified
+in Section 7.</p>
+
+<h3>2.3 The Gaussian target</h3>
+
+<p>Rather than a one-hot indicator — which would give a gradient at exactly one of 784 positions and
+train very poorly — the target is a Gaussian bump centred on that cell (line 166):</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(4)</span>
+<span class="v">H</span><sub>i</sub>(<span class="v">r</span>, <span class="v">c</span>) = exp( − [ (<span class="v">c</span> − <span class="v">c</span><sub>x</sub>)² + (<span class="v">r</span> − <span class="v">c</span><sub>y</sub>)² ] / 2<span class="v">σ</span>² ), &nbsp;&nbsp; <span class="v">σ</span> = 5
+</div>
+</div>
+
+<p>Two post-processing steps follow (lines 143–144): values are clipped above at 1, and values below
+0.0099 are set to exactly 0. The threshold defines an effective support radius, obtained by inverting (4):</p>
+
+<div class="eq">
+<span class="v">r</span><sub>max</sub> = <span class="v">σ</span> √( −2 ln 0.0099 ) = 5 · √9.234 = <strong>15.19 cells</strong>
+</div>
+
+<p>This is the critical observation about <span class="v">σ</span>. It is measured in <em>heatmap
+cells</em>, not pixels, so the blob's radius is 15.19 cells on a map that is only 28 cells wide —
+it covers more than half the map. In the 224-pixel canvas that is a radius of 122 px. Canonical CPM
+implementations use <span class="v">σ</span> ≈ 1–2 cells.</p>
+
+<table>
+  <thead><tr><th style="width:34%">Distance from peak</th><th style="width:22%">Target value</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td class="num">0 cells</td><td class="num">1.0000</td><td>peak</td></tr>
+    <tr><td class="num">1 cell (8 px)</td><td class="num">0.9802</td><td>almost indistinguishable from the peak</td></tr>
+    <tr><td class="num">3 cells (24 px)</td><td class="num">0.8353</td><td>still very high</td></tr>
+    <tr><td class="num">5 cells (40 px)</td><td class="num">0.6065</td><td>= <span class="v">e</span><sup>−1/2</sup>, one standard deviation</td></tr>
+    <tr><td class="num">10 cells (80 px)</td><td class="num">0.1353</td><td></td></tr>
+    <tr><td class="num">15 cells (120 px)</td><td class="num">0.0111</td><td>just above the 0.0099 clip</td></tr>
+  </tbody>
+</table>
+<div class="measured">Measured by evaluating exp(−d²/50) directly.</div>
+
+<p>The flatness near the peak is the operative problem: a one-cell error changes the target by 2%,
+so the loss landscape around the correct answer is nearly flat and provides little pressure to
+localise precisely. This is the mathematical origin of the diffuse predictions seen at inference.</p>
+
+<h3>2.4 Channel selection and the background channel</h3>
+
+<p>Of the eight annotated landmarks only five are kept (line 147), namely indices
+<span class="mono">[3,4,5,6,7]</span> zero-based, which are landmark IDs 4–8. A sixth channel is
+then <em>prepended</em> (lines 148–150):</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(5)</span>
+<span class="v">H</span><sub>bg</sub>(<span class="v">r</span>, <span class="v">c</span>) = 1 − max<sub><span class="v">i</span> ∈ {1..5}</sub> <span class="v">H</span><sub>i</sub>(<span class="v">r</span>, <span class="v">c</span>)
+</div>
+</div>
+
+<p>This is <em>not</em> a softmax normalisation — the six channels do not sum to 1, and each is
+regressed independently. The background channel acts as an explicit "nothing here" target, giving
+the network a supervised signal on empty regions instead of leaving them to be inferred from five
+near-zero channels. It also explains the model's output width: <span class="mono">CPM(k=5)</span>
+emits <span class="mono">k + 1 = 6</span> channels
+(<span class="mono">cpm_model_v2.py</span> line 20).</p>
+
+<p>Measured statistics of one real target tensor:</p>
+
+<table>
+  <thead><tr><th>Channel</th><th style="width:14%">max</th><th style="width:14%">mean</th><th style="width:22%">non-zero cells</th><th>Interpretation</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">0 (background)</td><td class="num">1.000</td><td class="num">0.6371</td><td class="num">779 / 784 (99.4%)</td><td>dominant channel</td></tr>
+    <tr><td class="mono">1 (kp4)</td><td class="num">1.000</td><td class="num">0.1648</td><td class="num">432 / 784 (55.1%)</td><td rowspan="5" style="vertical-align:middle">each landmark's blob covers 40–73% of the map</td></tr>
+    <tr><td class="mono">2 (kp5)</td><td class="num">1.000</td><td class="num">0.1894</td><td class="num">575 / 784 (73.3%)</td></tr>
+    <tr><td class="mono">3 (kp6)</td><td class="num">1.000</td><td class="num">0.1706</td><td class="num">483 / 784 (61.6%)</td></tr>
+    <tr><td class="mono">4 (kp7)</td><td class="num">1.000</td><td class="num">0.1364</td><td class="num">405 / 784 (51.7%)</td></tr>
+    <tr><td class="mono">5 (kp8)</td><td class="num">1.000</td><td class="num">0.1113</td><td class="num">310 / 784 (39.5%)</td></tr>
+  </tbody>
+</table>
+<div class="measured">Measured on <span class="mono">InsectKPDataset("data","train")[0]</span>. Overall, 36.6% of target values are exactly 0 and 20.6% exceed 0.5.</div>
+
+<h3>2.5 The centre map</h3>
+
+<p>A seventh tensor is built at full resolution (lines 152–153) as a Gaussian at the canvas centre:</p>
+
+<div class="eq">
+<span class="v">C</span>(<span class="v">r</span>, <span class="v">c</span>) = exp( − [(<span class="v">c</span> − 112)² + (<span class="v">r</span> − 112)²] / 2·5² )
+</div>
+
+<p>Its integral provides a useful sanity check on the implementation — for a continuous
+2-D Gaussian, ∫∫ exp(−‖<span class="v">z</span>‖²/2<span class="v">σ</span>²) d<span class="v">z</span> = 2π<span class="v">σ</span>²:</p>
+
+<div class="eq">
+2π<span class="v">σ</span>² = 2π · 25 = 157.080 &nbsp;&nbsp;versus&nbsp;&nbsp; measured sum = <strong>157.080</strong>
+</div>
+
+<p>The centre map tells the network which subject to attend to when several are present — the
+original CPM's mechanism for multi-person pose estimation. Here it is <strong>identical for every
+sample</strong>, since the crop always centres one specimen. It therefore carries no per-sample
+information and acts as a learned constant bias. This is why inference can build it once outside
+the image loop. It also means the crop step is not optional: the network has been told, by
+construction, that the subject is at the centre.</p>
+
+<h2 class="pagebreak">3. The architecture</h2>
+
+<p>Let <span class="v">I</span> ∈ ℝ<sup>3×224×224</sup> be the image and
+<span class="v">C</span> ∈ ℝ<sup>1×224×224</sup> the centre map. The model computes six heatmap
+predictions <span class="v">H</span><sup>(1)</sup>…<span class="v">H</span><sup>(6)</sup>, each in
+ℝ<sup>6×28×28</sup>, and returns all of them
+(<span class="mono">cpm_model_v2.py</span> line 170).</p>
+
+<h3>3.1 Downsampling the centre map</h3>
+
+<div class="eq">
+<span class="v">C</span>′ = AvgPool(<span class="v">C</span>; <span class="v">k</span>=9, <span class="v">s</span>=8, <span class="v">p</span>=1)
+</div>
+
+<p>with output size given by the standard formula</p>
+
+<div class="eq">
+⌊ (224 + 2·1 − 9) / 8 ⌋ + 1 = ⌊ 217/8 ⌋ + 1 = 27 + 1 = <strong>28</strong>
+</div>
+
+<p>matching the heatmap grid so it can be concatenated at every stage.</p>
+
+<h3>3.2 The shared trunk</h3>
+
+<p><span class="mono">_middle</span> (lines 80–86) computes features reused by every refinement stage:</p>
+
+<pre><code>F = pool3( relu( conv3( pool2( relu( conv2( pool1( relu( conv1(I) ) ) ) ) ) ) ) )
+    conv1: 3   -> 128,  9x9      pool: 3x3 stride 2
+    conv2: 128 -> 128,  9x9      pool: 3x3 stride 2
+    conv3: 128 -> 128,  9x9      pool: 3x3 stride 2
+    F in R^(128 x 28 x 28)</code></pre>
+
+<p>Three stride-2 pools give total stride 2³ = 8, hence 224/8 = 28. The 9×9 kernels are unusually
+large by modern standards; Section 4 explains why that matters here.</p>
+
+<h3>3.3 Stage 1 — the initial estimate</h3>
+
+<p><span class="mono">_stage1</span> (lines 68–78) is a separate branch with its <em>own</em> copy of
+the trunk (<span class="mono">conv1_stage1</span>…<span class="mono">conv3_stage1</span> are distinct
+parameters from <span class="mono">conv*_stage2</span>), followed by a predictor:</p>
+
+<div class="eq">
+<span class="v">H</span><sup>(1)</sup> = <span class="v">g</span><sub>1</sub>(<span class="v">I</span>) &nbsp;&nbsp; where <span class="v">g</span><sub>1</sub> ends 32 → 512 (9×9) → 512 (1×1) → 6 (1×1)
+</div>
+
+<p>Note there is no activation on the final convolution, so <span class="v">H</span><sup>(1)</sup> is
+unbounded. Measured range of the trained stage-6 output on a real sample:
+<span class="mono">[−0.027, 1.033]</span> against a target range of <span class="mono">[0, 1]</span>.
+Values slightly outside [0,1] are expected, not a defect — the model is performing regression, not
+classification.</p>
+
+<h3>3.4 Stages 2–6 — the refinement recurrence</h3>
+
+<p>This is the heart of the architecture. Each subsequent stage is a function of the trunk features,
+the <em>previous stage's output</em>, and the centre map:</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(6)</span>
+<span class="v">H</span><sup>(<span class="v">t</span>)</sup> = <span class="v">g</span><sub><span class="v">t</span></sub> ( <span class="v">A</span><sub><span class="v">t</span></sub>(<span class="v">F</span>) ⊕ <span class="v">H</span><sup>(<span class="v">t</span>−1)</sup> ⊕ <span class="v">C</span>′ ), &nbsp;&nbsp; <span class="v">t</span> = 2, …, 6
+</div>
+</div>
+
+<p>where ⊕ is channel concatenation and <span class="v">A</span><sub><span class="v">t</span></sub> is
+a 5×5 adapter reducing 128 channels to 32. The concatenated width is</p>
+
+<div class="eq">
+32 &nbsp;+&nbsp; (<span class="v">k</span>+1) &nbsp;+&nbsp; 1 &nbsp;=&nbsp; 32 + 6 + 1 = <strong>39</strong>
+</div>
+
+<p>which is exactly the input width declared at <span class="mono">cpm_model_v2.py</span> line 30,
+<span class="mono">32 + self.k + 2</span>. Each <span class="v">g</span><sub><span class="v">t</span></sub>
+is then three 11×11 convolutions followed by two 1×1 convolutions.</p>
+
+<p>The essential point about (6) is that <strong>the previous prediction is an input, not just an
+output.</strong> Stage <span class="v">t</span> can therefore condition landmark 4's position on where
+it currently believes landmarks 5–8 are. The network learns the joint spatial configuration of the
+landmark set — an implicit shape model — rather than five independent detectors.</p>
+
+<h3>3.5 Parameter budget</h3>
+
+<table>
+  <thead><tr><th>Component</th><th style="width:16%">Parameters</th><th style="width:12%">Share</th><th>Comment</th></tr></thead>
+  <tbody>
+    <tr><td>Refinement stages 2–6 (<span class="mono">Mconv*</span>)</td><td class="num">22.93 M</td><td class="num">75.2%</td><td>the 11×11 kernels dominate</td></tr>
+    <tr><td>Stage 1 branch</td><td class="num">4.38 M</td><td class="num">14.4%</td><td>includes its private trunk</td></tr>
+    <tr><td>Shared trunk (<span class="mono">conv*_stage2</span>)</td><td class="num">2.79 M</td><td class="num">9.1%</td><td>computed once, reused 5×</td></tr>
+    <tr><td>Per-stage adapters (<span class="mono">conv1_stage3-6</span>)</td><td class="num">0.41 M</td><td class="num">1.3%</td><td>5×5, 128→32</td></tr>
+    <tr><th>Total</th><th class="num">30.51 M</th><th class="num">100%</th><th></th></tr>
+  </tbody>
+</table>
+<div class="measured">Measured with <span class="mono">sum(p.numel() for p in CPM(5).parameters())</span>.</div>
+
+<p>Where the 75% goes is worth seeing explicitly. A single 11×11 convolution with 128 input and
+128 output channels costs</p>
+
+<div class="eq">
+11 × 11 × 128 × 128 = 1,982,464 ≈ <strong>1.98 M</strong> parameters
+</div>
+
+<p>and there are two such layers per stage across five stages, i.e. 19.8 M from those alone. The
+architecture spends its entire budget buying spatial extent, which Section 4 shows is the point.</p>
+
+<h3>3.6 Shape trace</h3>
+
+<table>
+  <thead><tr><th style="width:44%">Tensor</th><th style="width:28%">Shape</th><th>Produced by</th></tr></thead>
+  <tbody>
+    <tr><td>image</td><td class="mono">(1, 3, 224, 224)</td><td>dataset</td></tr>
+    <tr><td>centre map</td><td class="mono">(1, 1, 224, 224)</td><td>dataset</td></tr>
+    <tr><td>pooled centre map <span class="v">C</span>′</td><td class="mono">(1, 1, 28, 28)</td><td><span class="mono">pool_center</span></td></tr>
+    <tr><td>trunk features <span class="v">F</span></td><td class="mono">(1, 128, 28, 28)</td><td><span class="mono">_middle</span></td></tr>
+    <tr><td>stage 1 … 6 outputs</td><td class="mono">(1, 6, 28, 28)</td><td><span class="mono">_stage1</span> … <span class="mono">_stage6</span></td></tr>
+  </tbody>
+</table>
+<div class="measured">Measured by running <span class="mono">CPM(5)</span> on zero tensors.</div>
+
+<h2>4. Receptive fields: why six stages</h2>
+
+<p>This is the single most important quantitative argument in the architecture, and it is the reason
+the design looks so parameter-hungry. The receptive field of a stacked convolution obeys the
+recurrence</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(7)</span>
+<span class="v">R</span><sub><span class="v">ℓ</span></sub> = <span class="v">R</span><sub><span class="v">ℓ</span>−1</sub> + (<span class="v">k</span><sub><span class="v">ℓ</span></sub> − 1) · <span class="v">j</span><sub><span class="v">ℓ</span>−1</sub>, &nbsp;&nbsp;&nbsp; <span class="v">j</span><sub><span class="v">ℓ</span></sub> = <span class="v">j</span><sub><span class="v">ℓ</span>−1</sub> · <span class="v">s</span><sub><span class="v">ℓ</span></sub>
+</div>
+</div>
+
+<p>where <span class="v">R</span> is the receptive field in input pixels and <span class="v">j</span>
+the cumulative stride ("jump"). Applying (7) to this network:</p>
+
+<table>
+  <thead><tr><th style="width:34%">Point in the network</th><th style="width:20%">Receptive field</th><th>What it can see</th></tr></thead>
+  <tbody>
+    <tr><td>Trunk output <span class="v">F</span></td><td class="num">71 px</td><td>a local patch — one leg joint, part of the body</td></tr>
+    <tr><td>Stage 1 output</td><td class="num">167 px</td><td>most of the specimen, but not the whole canvas</td></tr>
+    <tr><td>Stage 2 output</td><td class="num">343 px</td><td><strong>exceeds 224</strong> — the entire image</td></tr>
+    <tr><td>Stage 3 output</td><td class="num">583 px</td><td>whole image, with margin</td></tr>
+    <tr><td>Stage 4 output</td><td class="num">823 px</td><td>whole image</td></tr>
+    <tr><td>Stage 5 output</td><td class="num">1063 px</td><td>whole image</td></tr>
+    <tr><td>Stage 6 output</td><td class="num">1303 px</td><td>whole image, ≈ 5.8× over</td></tr>
+  </tbody>
+</table>
+<div class="measured">Measured by applying recurrence (7) to the actual kernel and stride sequence in <span class="mono">cpm_model_v2.py</span>.</div>
+
+<p>Read the table as the design rationale. Stage 1 is a <em>local</em> detector: with a 167 px view it
+can find things that look like a landmark, but it cannot tell landmark 5 from landmark 7 if they are
+locally similar, because it cannot see the rest of the animal. From stage 2 onward every prediction
+is a function of the <em>entire</em> image, so the network can enforce global consistency — "this
+candidate cannot be landmark 8, because landmark 4 is over there."</p>
+
+<p>Each 11×11 convolution contributes 10 pixels × jump 8 = 80 px of receptive field, and each stage
+stacks three of them, adding 240 px per stage. That is precisely why the kernels are large and why
+the parameter count is concentrated there: <strong>the stages buy context, and context is what
+disambiguates landmark identity.</strong></p>
+
+<div class="callout ok">
+  <span class="label">Empirical confirmation</span>
+  Measured per-stage error on a trained sample (Section 5.3) drops sharply from stage 1 to stage 2
+  — raw MSE 0.0193 → 0.0111, a 43% reduction — exactly where the receptive field crosses the image
+  boundary. It then flattens and is essentially converged by stage 4.
+</div>
+
+<h2>5. Training</h2>
+
+<p>Implemented in <span class="mono">train_heatmap.py</span>.</p>
+
+<h3>5.1 The loss and intermediate supervision</h3>
+
+<p>Lines 159–161 compute:</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(8)</span>
+𝓛 = Σ<sub><span class="v">t</span>=1</sub><sup>6</sup> <span class="v">λ</span> · MSE( <span class="v">H</span><sup>(<span class="v">t</span>)</sup>, <span class="v">H</span><sup>target</sup> ), &nbsp;&nbsp;&nbsp; <span class="v">λ</span> = 4704
+</div>
+</div>
+
+<p>The sum over <em>all six</em> stages — not just the final one — is <strong>intermediate
+supervision</strong>, and it is what makes a network this deep trainable. Without it, the gradient
+reaching stage 1 would have to traverse five refinement blocks; with it, every stage receives a
+direct gradient from the loss:</p>
+
+<div class="eq">
+∂𝓛 / ∂<span class="v">θ</span><sub><span class="v">t</span></sub> = <span class="v">λ</span> ∂MSE(<span class="v">H</span><sup>(<span class="v">t</span>)</sup>) / ∂<span class="v">θ</span><sub><span class="v">t</span></sub> &nbsp;+&nbsp; Σ<sub><span class="v">t</span>′&gt;<span class="v">t</span></sub> <span class="v">λ</span> ∂MSE(<span class="v">H</span><sup>(<span class="v">t</span>′)</sup>) / ∂<span class="v">θ</span><sub><span class="v">t</span></sub>
+</div>
+
+<p>The first term is a short path that cannot vanish regardless of depth. This is the same principle
+as auxiliary classifiers in GoogLeNet, and it predates residual connections as a solution to the
+same problem.</p>
+
+<h3>5.2 What <span class="mono">heat_weight</span> actually does</h3>
+
+<p>Line 140 sets <span class="mono">heat_weight = 28 * 28 * 6 = 4704</span>. This number is not
+arbitrary: it is exactly the number of elements per sample in the heatmap tensor. PyTorch's
+<span class="mono">MSELoss</span> defaults to <span class="mono">reduction='mean'</span>, averaging
+over <em>all</em> N·C·H·W entries. Multiplying by C·H·W converts that into a sum over the heatmap
+and a mean over the batch:</p>
+
+<div class="eq">
+<span class="v">λ</span> · (1 / <span class="v">NCHW</span>) Σ<sub><span class="v">n,c,h,w</span></sub> (·)² &nbsp;=&nbsp; (1 / <span class="v">N</span>) Σ<sub><span class="v">n</span></sub> Σ<sub><span class="v">c,h,w</span></sub> (·)²
+</div>
+
+<p>So the design intent is the classical CPM objective — total squared error over the heatmap,
+averaged over the batch. The practical effect is a ×4704 increase in gradient magnitude relative to
+a bare mean, which must be read together with the learning rate: the default
+<span class="mono">--lr 1e-4</span> is small precisely because the loss is large.</p>
+
+<h3>5.3 Measured loss values</h3>
+
+<p>Running the trained checkpoint on one test sample and evaluating (8) stage by stage:</p>
+
+<table>
+  <thead><tr><th style="width:18%">Stage</th><th style="width:22%">Raw MSE</th><th style="width:24%">Weighted (×4704)</th><th>Reduction vs. stage 1</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="num">0.019314</td><td class="num">90.854</td><td>—</td></tr>
+    <tr><td>2</td><td class="num">0.011073</td><td class="num">52.089</td><td class="num">−42.7%</td></tr>
+    <tr><td>3</td><td class="num">0.009215</td><td class="num">43.348</td><td class="num">−52.3%</td></tr>
+    <tr><td>4</td><td class="num">0.008677</td><td class="num">40.818</td><td class="num">−55.1%&nbsp; (best)</td></tr>
+    <tr><td>5</td><td class="num">0.008992</td><td class="num">42.299</td><td class="num">−53.4%</td></tr>
+    <tr><td>6</td><td class="num">0.008942</td><td class="num">42.064</td><td class="num">−53.7%</td></tr>
+    <tr><th>Σ (reported loss)</th><th></th><th class="num">311.472</th><th></th></tr>
+  </tbody>
+</table>
+<div class="measured">Measured on <span class="mono">InsectKPDataset("data","test")[0]</span> with <span class="mono">epoch-latest.pth</span>.</div>
+
+<p>For scale, trivial baselines on 20 test samples give a weighted per-stage loss of
+<strong>749.43</strong> for predicting all zeros and <strong>473.97</strong> for predicting the global
+mean, against ≈42 for the trained stage 6. The model is doing real work.</p>
+
+<p>Two things are visible in this table. The large gain at stage 2 corroborates the receptive-field
+argument of Section 4. And <strong>refinement saturates at stage 4</strong> — stages 5 and 6 are
+marginally worse than stage 4 on this sample. Six stages may be more than this problem needs; a
+4-stage variant would cut roughly 9 M parameters. That is a single-sample observation, so treat it
+as a hypothesis worth testing on the full validation set, not as an established result.</p>
+
+<h3>5.4 Optimiser and schedule</h3>
+
+<p>AdamW (line 33) with a cosine schedule and linear warm-up
+(<span class="mono">utils.py</span> lines 200–211):</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(9)</span>
+<span class="v">η</span>(<span class="v">i</span>) = <span class="v">η</span><sub>base</sub> · <span class="v">i</span> / <span class="v">i</span><sub>warm</sub> &nbsp;&nbsp; for <span class="v">i</span> &lt; <span class="v">i</span><sub>warm</sub>
+</div>
+<div class="eq"><span class="eqnum">(10)</span>
+<span class="v">η</span>(<span class="v">i</span>) = <span class="v">η</span><sub>min</sub> + ½(<span class="v">η</span><sub>base</sub> − <span class="v">η</span><sub>min</sub>)(1 + cos(π <span class="v">τ</span>)), &nbsp;&nbsp; <span class="v">τ</span> = (<span class="v">i</span> − <span class="v">i</span><sub>warm</sub>)/(<span class="v">i</span><sub>total</sub> − <span class="v">i</span><sub>warm</sub>)
+</div>
+</div>
+
+<p>Note the schedule is indexed by <em>iteration</em>, not epoch, and is looked up with a global
+counter <span class="mono">global_it = global_start + it - 1</span> (line 144). With the defaults
+<span class="mono">lr=1e-4, min_lr=1e-6, warmup_epochs=5, max_epoch=100</span>:</p>
+
+<table>
+  <thead><tr><th style="width:20%">Epoch</th><th style="width:24%">Learning rate</th><th>Phase</th></tr></thead>
+  <tbody>
+    <tr><td class="num">0</td><td class="num">0.00e+00</td><td>warm-up starts from zero</td></tr>
+    <tr><td class="num">2</td><td class="num">4.00e−05</td><td>linear ramp</td></tr>
+    <tr><td class="num">5</td><td class="num">1.00e−04</td><td>peak; cosine decay begins</td></tr>
+    <tr><td class="num">50</td><td class="num">5.46e−05</td><td>half-way, ≈ half the peak</td></tr>
+    <tr><td class="num">100</td><td class="num">1.00e−06</td><td>floor</td></tr>
+  </tbody>
+</table>
+
+<h3>5.5 Augmentation as a group action</h3>
+
+<p>Lines 126–132 apply two independent flips with probability ½ each. Because a coordinate is
+normalised to [0,1] over the <em>whole canvas</em>, the label transform is the corresponding
+reflection:</p>
+
+<div class="eq">
+<span class="v">σ</span><sub>x</sub>: (<span class="v">u</span>, <span class="v">v</span>) ↦ (1 − <span class="v">u</span>, <span class="v">v</span>) &nbsp;&nbsp;&nbsp;&nbsp;
+<span class="v">σ</span><sub>y</sub>: (<span class="v">u</span>, <span class="v">v</span>) ↦ (<span class="v">u</span>, 1 − <span class="v">v</span>)
+</div>
+
+<p>This is geometrically correct despite the asymmetric bottom-right padding, because the flip is
+applied to the full canvas and the normalisation is canvas-relative, so both content and padding
+reflect together.</p>
+
+<p>The two independent flips generate the <strong>Klein four-group</strong>
+<span class="v">V</span><sub>4</sub> = {<span class="v">e</span>, <span class="v">σ</span><sub>x</sub>,
+<span class="v">σ</span><sub>y</sub>, <span class="v">σ</span><sub>x</sub><span class="v">σ</span><sub>y</sub>},
+each element sampled with probability ¼. Note that
+<span class="v">σ</span><sub>x</sub><span class="v">σ</span><sub>y</sub> = rotation by 180°, so the
+group contains two reflections (which reverse chirality) and one proper rotation (which does not).
+For specimens on a slide in arbitrary orientation this is a defensible choice; see Section 8.5 for
+the caveat about landmark identity.</p>
+
+<h2 class="pagebreak">6. Decoding: heatmaps → coordinates</h2>
+
+<p>Inference inverts Section 2. Implemented in <span class="mono">infer_unlabeled.py</span>,
+lines 53–60 and 219–221.</p>
+
+<h3>6.1 Soft-arg-max</h3>
+
+<p>The naive decoder is <span class="n">arg max</span>, but it quantises to whole cells — 8 px in
+canvas space. Instead a weighted average is taken over the <span class="v">k</span> strongest cells:</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(11)</span>
+<span class="v">w</span><sub><span class="v">j</span></sub> = exp(<span class="v">s</span><sub><span class="v">j</span></sub>) / Σ<sub><span class="v">m</span>=1</sub><sup><span class="v">k</span></sup> exp(<span class="v">s</span><sub><span class="v">m</span></sub>)
+</div>
+<div class="eq"><span class="eqnum">(12)</span>
+<span class="v">x</span><sub>224</sub> = 8 · Σ<sub><span class="v">j</span></sub> <span class="v">w</span><sub><span class="v">j</span></sub> <span class="v">c</span><sub><span class="v">j</span></sub>, &nbsp;&nbsp;&nbsp;&nbsp;
+<span class="v">y</span><sub>224</sub> = 8 · Σ<sub><span class="v">j</span></sub> <span class="v">w</span><sub><span class="v">j</span></sub> <span class="v">r</span><sub><span class="v">j</span></sub>
+</div>
+</div>
+
+<p>where <span class="v">s</span><sub><span class="v">j</span></sub> are the top-<span class="v">k</span>
+heatmap values and (<span class="v">c</span><sub><span class="v">j</span></sub>,
+<span class="v">r</span><sub><span class="v">j</span></sub>) their grid coordinates, recovered from the
+flat index <span class="v">n</span><sub><span class="v">j</span></sub> by</p>
+
+<div class="eq">
+<span class="v">c</span><sub><span class="v">j</span></sub> = <span class="v">n</span><sub><span class="v">j</span></sub> mod 28, &nbsp;&nbsp;&nbsp;
+<span class="v">r</span><sub><span class="v">j</span></sub> = ⌊ <span class="v">n</span><sub><span class="v">j</span></sub> / 28 ⌋
+</div>
+
+<p>since the flattening is row-major, <span class="v">n</span> = <span class="v">r</span>·28 + <span class="v">c</span>.</p>
+
+<div class="callout warn">
+  <span class="label">The softmax in (11) is nearly uniform</span>
+  <p style="margin-bottom:.4em">This is a real weakness of the decoder as written. The
+  <span class="v">s</span><sub><span class="v">j</span></sub> are raw regression outputs in roughly
+  [0, 1], so the largest achievable weight ratio is</p>
+  <div class="eq" style="margin:.3em 0">exp(1) / exp(0) = <span class="v">e</span> ≈ 2.718</div>
+  <p style="margin-bottom:.4em">Equation (12) is therefore much closer to an <em>unweighted mean</em>
+  of the top-<span class="v">k</span> cells than to a peak-weighted estimate. On well-behaved images
+  this is harmless because the top cells are adjacent — measured difference between
+  <span class="mono">--topk 5</span> and <span class="mono">--topk 1</span> on the test images was
+  about 10 px. It fails when a channel is bimodal: the estimate lands between the two peaks, on
+  neither. Introducing a temperature, <span class="v">w</span><sub><span class="v">j</span></sub> ∝
+  exp(<span class="v">s</span><sub><span class="v">j</span></sub>/<span class="v">T</span>) with
+  <span class="v">T</span> ≪ 1, would sharpen it toward a true arg max.</p>
+</div>
+
+<h3>6.2 Inverting the geometric transform</h3>
+
+<p>Composing the inverses of (3), (2) and (1) in reverse order gives a pure affine map:</p>
+
+<div class="eqbox">
+<div class="eq"><span class="eqnum">(13)</span>
+<span class="v">X</span> = <span class="v">x</span><sub>224</sub> / <span class="v">s</span> + <span class="v">x</span><sub>1</sub>, &nbsp;&nbsp;&nbsp;&nbsp;
+<span class="v">Y</span> = <span class="v">y</span><sub>224</sub> / <span class="v">s</span> + <span class="v">y</span><sub>1</sub>
+</div>
+</div>
+
+<p>No padding term appears, which is a direct consequence of the encoder padding only the bottom and
+right. Had it padded symmetrically, (13) would need an extra offset of
+(224 − <span class="v">s·w</span><sub>crop</sub>)/2.</p>
+
+<h3>6.3 Effective resolution</h3>
+
+<p>One heatmap cell corresponds to 8/<span class="v">s</span> original pixels, and
+<span class="v">s</span> depends on the box. This makes the achievable precision
+<em>image-dependent</em>:</p>
+
+<table>
+  <thead><tr><th>Image</th><th style="width:14%">Box side</th><th style="width:14%"><span class="v">s</span></th><th style="width:22%">1 cell in original px</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">GRSM40_2_2025-01-01_253.jpg</td><td class="num">376</td><td class="num">0.596</td><td class="num">13.4</td></tr>
+    <tr><td class="mono">GRSM40_2_2025-01-01_254.jpg</td><td class="num">357</td><td class="num">0.627</td><td class="num">12.8</td></tr>
+    <tr><td class="mono">GRSM40_3__80.jpg</td><td class="num">649</td><td class="num">0.345</td><td class="num">23.2</td></tr>
+    <tr><td class="mono">GRSM40_3__81.jpg</td><td class="num">620</td><td class="num">0.361</td><td class="num">22.1</td></tr>
+  </tbody>
+</table>
+<div class="measured">Measured from <span class="mono">output/unlabeled/keypoints.csv</span>.</div>
+
+<h3>6.4 Dropping the background channel</h3>
+
+<p>Before decoding, inference discards channel 0
+(<span class="mono">final = final[:, 1:]</span>). This is mandatory: channel 0 is the background map
+of equation (5), whose arg max is wherever landmarks are <em>absent</em>. Decoding it produces a
+spurious sixth "landmark", and — worse — shifts every subsequent index by one. This is the defect
+present in the older <span class="mono">inference.py</span> at line 195.</p>
+
+<h2>7. A complete worked example</h2>
+
+<p>Taking a real annotation and pushing it through encode → decode, with no network involved, isolates
+the precision cost of the representation itself.</p>
+
+<pre><code>file            Entomobryomorpha_000049.jpg  (2592 x 1944)
+box             [527.6, 573.4, 1988.2, 1623.5]     ->  crop 1460.5 x 1050.0
+landmark 4 raw  (946.40, 872.41)</code></pre>
+
+<table>
+  <thead><tr><th style="width:8%">Step</th><th style="width:30%">Operation</th><th style="width:28%">Result</th><th>Equation</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>subtract box origin</td><td class="mono">(418.78, 298.99)</td><td>(1)</td></tr>
+    <tr><td>2</td><td><span class="v">s</span> = min(224/1460.5, 224/1050.0)</td><td class="mono">0.15337</td><td>(2)</td></tr>
+    <tr><td>3</td><td>multiply by <span class="v">s</span></td><td class="mono">(64.23, 45.86)</td><td>(2)</td></tr>
+    <tr><td>4</td><td>divide by 224</td><td class="mono">(0.2867, 0.2047)</td><td>(3)</td></tr>
+    <tr><td>5</td><td>⌊·×28⌋ → grid cell</td><td class="mono">(8, 5)</td><td>§2.2</td></tr>
+    <tr><td>6</td><td>decode, ×8 back to canvas</td><td class="mono">(64, 40)</td><td>(12)</td></tr>
+    <tr><td>7</td><td>÷<span class="v">s</span>, add box origin</td><td class="mono">(944.9, 834.2)</td><td>(13)</td></tr>
+  </tbody>
+</table>
+
+<p>Comparing step 7 against the original annotation (946.40, 872.41):</p>
+
+<div class="eq">
+round-trip error = ( <strong>−1.5</strong>, <strong>−38.2</strong> ) original pixels
+</div>
+
+<p>The <span class="v">x</span> error is small by luck; the <span class="v">y</span> error is large
+because 0.2047 × 28 = 5.73 and the floor at step 5 discards 0.73 of a cell. With a crop this large,
+<span class="v">s</span> = 0.153 means one cell spans 52.2 original pixels, so 0.73 cells is 38 px.</p>
+
+<div class="callout warn">
+  <span class="label">What this example establishes</span>
+  This is <strong>not</strong> model error — no network was run. It is the error floor imposed by the
+  28×28 grid, and it applies to the <em>training targets</em> as much as to predictions. The labels
+  the model learns from are themselves quantised this coarsely. Two consequences follow. First, no
+  amount of training can push accuracy below this floor with this stride. Second, the soft-arg-max
+  of Section 6.1 partially recovers sub-cell precision at inference, which is exactly why it exists —
+  but the encoder has no corresponding mechanism, so the targets stay quantised. Encoding the
+  Gaussian at the <em>unrounded</em> position (dropping the floor at line 140–141) would cost nothing
+  and remove this asymmetry.
+</div>
+
+<h2>8. Verified issues</h2>
+
+<p>Each item below was confirmed by executing the code, not by inspection alone.</p>
+
+<h3>8.1 <span class="mono">train_heatmap.py</span> depends on DDP to run at all</h3>
+
+<p>Lines 153–155 move <span class="mono">images</span> and <span class="mono">targets</span> to the
+GPU but pass <span class="mono">centermaps</span> straight from the loader, still on the CPU. Since
+<span class="mono">forward</span> concatenates it with GPU tensors (line 91), this should fail — and
+it does:</p>
+
+<pre><code>&gt;&gt;&gt; m = CPM(5).cuda(); m(img_cuda, centermap_cpu)
+RuntimeError: Expected all tensors to be on the same device, but found at least
+two devices, cuda:0 and cpu! (when checking argument for argument tensors in
+method wrapper_cat)</code></pre>
+
+<p>It works in practice only because line 44 wraps the model in
+<span class="mono">DistributedDataParallel(..., device_ids=[args.gpu])</span>, and single-device DDP
+<em>scatters inputs onto the target device</em> before calling forward. Verified:</p>
+
+<pre><code>&gt;&gt;&gt; ddp = DistributedDataParallel(CPM(5).cuda(), device_ids=[0])
+&gt;&gt;&gt; ddp(img_cuda, centermap_cpu)[-1].device
+device(type='cuda', index=0)      # DDP moved it silently</code></pre>
+
+<p>The practical consequence: <strong>you cannot debug this script single-GPU without DDP.</strong>
+Removing the wrapper — the natural first step when diagnosing a training problem — makes it crash
+with an error that points at the model rather than at the missing
+<span class="mono">.cuda()</span>. Adding <span class="mono">centermaps.cuda(non_blocking=True)</span>
+at lines 155 and 211 removes the hidden dependency at no cost.</p>
+
+<h3>8.2 <span class="mono">lmk_mask</span> is computed and discarded</h3>
+
+<p>Lines 121–124 build a per-landmark mask that zeroes landmarks 3 and 7 for profile views, but
+<span class="mono">__getitem__</span> returns only
+<span class="mono">image, heatmaps, centermap</span> at line 160. The mask never reaches
+<span class="mono">train_heatmap.py</span>, whose loss at line 161 is unmasked. The older
+coordinate pipeline did use it (<span class="mono">train.py</span> line 155), so this appears to
+have been lost in the port.</p>
+
+<p>The concrete effect runs through lines 93–95, which fill missing profile landmarks by duplication:</p>
+
+<pre><code>lmks[3-1] = lmks[2-1]      # kp3 := kp2 — later discarded by the channel selection, harmless
+lmks[7-1] = lmks[5-1]      # kp7 := kp5 — RETAINED as channel 4, and trained on</code></pre>
+
+<p>328 of the 755 annotated images are profile views, so for <strong>43% of the training set the
+model is taught that landmark 7 coincides with landmark 5.</strong> Predictions are consistent with
+this: on the inference test images kp5 and kp7 land about 9 px apart on one and share an identical
+<span class="v">y</span> on another. Treat kp7 as unreliable and do not use the kp5–kp7 distance as
+a morphometric feature.</p>
+
+<h3>8.3 <span class="v">σ</span> = 5 is very broad for a 28×28 map</h3>
+
+<p>As derived in Section 2.3, the support radius is 15.19 cells on a 28-cell map, and the target
+changes by only 2% for a one-cell displacement. The gradient signal for precise localisation is
+correspondingly weak. Reducing <span class="v">σ</span> to 1–2 cells is the standard setting and
+would sharpen predictions, but requires retraining and may need a lower learning rate, since sparser
+targets increase gradient variance.</p>
+
+<h3>8.4 Argument order at the <span class="mono">gaussian</span> call sites</h3>
+
+<p>The function signature is <span class="mono">gaussian(x, y, H, W)</span> with <span class="v">H</span>
+rows and <span class="v">W</span> columns, and the body is self-consistent — verified by constructing
+a deliberately non-square map, where <span class="mono">gaussian(x=5, y=20, H=40, W=20)</span>
+correctly peaks at <span class="mono">(row 20, col 5)</span>. The call sites, however, pass width
+into <span class="v">H</span> and height into <span class="v">W</span>: line 142 passes
+<span class="mono">(w//stride, h//stride)</span> and line 153 passes <span class="mono">(w, h)</span>.
+This is harmless today <em>only</em> because the canvas is square, so both arguments are equal. It
+would silently transpose every target if <span class="mono">target_size</span> ever became
+non-square.</p>
+
+<h3>8.5 Flips do not relabel landmarks — verify this against your protocol</h3>
+
+<p>The flip augmentation of Section 5.5 transforms coordinates but leaves landmark <em>identities</em>
+untouched. In human pose and face alignment this is a known error: a horizontal mirror maps the left
+elbow onto the right elbow, so the label indices must be swapped as well, otherwise the network
+receives contradictory targets for the same visual pattern.</p>
+
+<p>Whether this applies here depends on anatomy the repository does not record — the annotations
+store only integer IDs. There is circumstantial reason for concern: landmarks 3 and 7 are precisely
+the two absent from profile views (deducible from <span class="mono">kp_6map8</span>, whose image is
+{1,2,4,5,6,8}), which is what one expects of a bilaterally symmetric pair. <strong>If any of
+landmarks 4–8 form a left/right pair, the flip augmentation is injecting label noise.</strong> The
+check is quick: plot several annotated specimens with landmark IDs drawn, and see whether mirroring
+maps the set onto itself with identities preserved. If not, add the corresponding index permutation
+inside the flip branches.</p>
+
+<h3>8.6 The train/test split is deterministic by file order</h3>
+
+<p>Lines 50–63 sort images by class, then take the first 80% for training and the last 20% for
+testing, with no shuffling. Filenames are sequential
+(<span class="mono">Entomobryomorpha_000048</span>, <span class="mono">…049</span>,
+<span class="mono">…060</span>), which for a microscopy session usually means consecutive frames of
+the same or adjacent specimens. Near-duplicate frames straddling the 80% boundary would leak
+between the splits and make validation loss optimistic. Worth verifying before quoting any
+validation number; grouping the split by specimen rather than by index would settle it.</p>
+
+<h3>8.7 Refinement saturates before stage 6</h3>
+
+<p>From the measured table in Section 5.3, stage 4 achieves the lowest error and stages 5–6 are
+marginally worse. If this holds across the validation set, a 4-stage model would save roughly 9 M
+parameters and two-thirds of the refinement compute at no accuracy cost. Single-sample evidence —
+treat as a hypothesis to test, not a conclusion.</p>
+
+<h2>9. Summary of the pipeline</h2>
+
+<pre><code>ANNOTATION (human)         kp_data.pkl: (x, y, id) per landmark, plus a box
+
+    |  insect_dataset.py
+    v
+ENCODE                     crop -> resize by s=min(224/w, 224/h) -> pad bottom-right
+                           (x,y) -> normalise -> floor to 28x28 cell -> Gaussian, sigma=5
+                           select channels [3..7] -> prepend bg = 1 - max
+                           TARGET: (6, 28, 28)          CENTRE MAP: (1, 224, 224)
+
+    |  cpm_model_v2.py
+    v
+NETWORK                    trunk F (128,28,28), RF 71 px
+                           H1 = g1(I)                            RF 167 px  (local)
+                           Ht = gt(A(F) + H_{t-1} + C'),  t=2..6 RF 343 -> 1303 px (global)
+                           returns all six: 6 x (6, 28, 28)
+
+    |  train_heatmap.py
+    v
+TRAIN                      L = SUM_t MSE(H_t, target) * 4704     <- intermediate supervision
+                           AdamW, cosine LR 1e-4 -> 1e-6, 5-epoch warm-up
+                           augment: Klein four-group of flips
+
+    |  infer_unlabeled.py
+    v
+DECODE                     take H6, DROP channel 0 (background)
+                           soft-arg-max over top-k -> (x224, y224)
+                           X = x224/s + x1,  Y = y224/s + y1
+                           OUTPUT: original-image pixels + peak score</code></pre>
+
+<div class="callout">
+  <span class="label">Reproducing the measurements</span>
+  Parameter counts and shapes: instantiate <span class="mono">CPM(5)</span> and inspect
+  <span class="mono">named_parameters()</span>. Receptive fields: apply recurrence (7) to the kernel
+  and stride sequence. Loss values: load <span class="mono">epoch-latest.pth</span>, run one
+  <span class="mono">InsectKPDataset</span> sample, and evaluate
+  <span class="mono">MSELoss()(pred, target) * 4704</span> per stage. The round-trip example reads
+  <span class="mono">kp_data.pkl</span> index 1 directly. All were executed with the
+  <span class="mono">insect_model</span> conda environment (torch 1.12.1+cu113).
+</div>
+
+</body>
+</html>

@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CPM Keypoint Inference — Research Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+
+  :root {
+    --ink:      #1a1d21;
+    --muted:    #5b6472;
+    --rule:     #d4d9e0;
+    --accent:   #1f4e79;
+    --warn-bg:  #fdf6e3;
+    --warn-br:  #c9a227;
+    --note-bg:  #eef4fa;
+    --note-br:  #1f4e79;
+    --code-bg:  #f5f6f8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Charter", "Georgia", "Cambria", serif;
+    font-size: 10.2pt;
+    line-height: 1.5;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--accent);
+    line-height: 1.25;
+    margin: 0 0 .4em 0;
+    break-after: avoid;
+  }
+  h1 { font-size: 21pt; letter-spacing: -.01em; }
+  h2 {
+    font-size: 13.5pt;
+    margin-top: 1.6em;
+    padding-bottom: .25em;
+    border-bottom: 1.5px solid var(--accent);
+  }
+  h3 { font-size: 11.4pt; margin-top: 1.3em; color: var(--ink); }
+  h4 { font-size: 10.2pt; margin-top: 1em; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .06em; font-size: 8.6pt; }
+
+  p { margin: 0 0 .7em 0; }
+  ul, ol { margin: 0 0 .8em 0; padding-left: 1.3em; }
+  li { margin-bottom: .3em; }
+
+  code, pre, .mono {
+    font-family: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
+  }
+  code { font-size: 8.8pt; background: var(--code-bg); padding: .1em .3em;
+         border-radius: 2px; }
+  pre {
+    font-size: 8.2pt;
+    line-height: 1.45;
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: .7em .9em;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: .6em 0 .9em 0;
+    break-inside: avoid;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.8pt;
+    margin: .6em 0 1em 0;
+    break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid var(--rule);
+    padding: .38em .55em;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #eaeef3;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 8.4pt;
+    font-weight: 600;
+  }
+  td.mono, th.mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.2pt; }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+
+  .callout {
+    background: var(--note-bg);
+    border-left: 3px solid var(--note-br);
+    padding: .6em .9em;
+    margin: .8em 0;
+    font-size: 9.4pt;
+    break-inside: avoid;
+  }
+  .callout.warn { background: var(--warn-bg); border-left-color: var(--warn-br); }
+  .callout .label {
+    display: block;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    margin-bottom: .25em;
+    color: var(--note-br);
+  }
+  .callout.warn .label { color: #8a6d1a; }
+
+  .eq {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 8.6pt;
+    background: #fff;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: .6em .9em;
+    margin: .7em 0;
+    line-height: 1.7;
+    break-inside: avoid;
+  }
+
+  .titleblock {
+    border-bottom: 2.5px solid var(--accent);
+    padding-bottom: .9em;
+    margin-bottom: 1.4em;
+  }
+  .subtitle { color: var(--muted); font-size: 11pt; margin: .2em 0 .7em 0; }
+  .meta { font-size: 8.4pt; color: var(--muted); font-family: "Segoe UI", Arial, sans-serif; }
+  .meta span { margin-right: 1.4em; }
+
+  .toc { font-size: 9.2pt; columns: 2; column-gap: 2em; }
+  .toc ol { padding-left: 1.4em; margin: 0; }
+  .toc li { margin-bottom: .22em; }
+
+  .pagebreak { break-before: page; }
+  .nobreak { break-inside: avoid; }
+
+  .caption { font-size: 8.4pt; color: var(--muted); margin-top: -.5em; margin-bottom: 1em; }
+  strong { font-weight: 700; }
+  .tight li { margin-bottom: .15em; }
+</style>
+</head>
+<body>
+
+<div class="titleblock">
+  <h1>Insect Keypoint Inference</h1>
+  <div class="subtitle">A research guide to running <span class="mono">infer_unlabeled.py</span>,
+  interpreting its output, and feeding that output into Vision Transformer training</div>
+  <div class="meta">
+    <span><strong>Project:</strong> c:\alignment</span>
+    <span><strong>Model:</strong> CPM, 6 stages, k=5</span>
+    <span><strong>Checkpoint:</strong> epoch-latest.pth</span>
+    <span><strong>Date:</strong> 4 August 2026</span>
+  </div>
+</div>
+
+<div class="toc">
+<ol>
+  <li>Scope and prerequisites</li>
+  <li>Running the inference</li>
+  <li>Parameter reference</li>
+  <li>Reading the output files</li>
+  <li>What the numbers actually mean</li>
+  <li>Precision limits and reliability</li>
+  <li>Using the output to train a ViT</li>
+  <li>Command cookbook</li>
+</ol>
+</div>
+
+<h2>1. Scope and prerequisites</h2>
+
+<p>This pipeline takes microscope images of soil arthropods in which <em>nothing has been
+annotated</em> and produces, for each specimen, a bounding box and five anatomical keypoint
+coordinates. It exists because the trained model cannot consume a raw camera frame directly:
+the network was trained exclusively on <em>crops</em> of individual specimens, so a box must
+be supplied at inference time. When no human has drawn one, the box has to be recovered
+automatically.</p>
+
+<h4>Environment</h4>
+
+<p>The pipeline requires the <span class="mono">insect_model</span> conda environment. The base
+environment does not have PyTorch, Pillow, or OpenCV installed and will fail immediately.</p>
+
+<pre><code>conda activate insect_model    # torch 1.12.1+cu113, CUDA available</code></pre>
+
+<p>All commands in this guide are written for <span class="mono">bash</span>, using
+<span class="mono">\</span> to continue a line. On Windows <span class="mono">cmd.exe</span> the
+continuation character is <span class="mono">^</span> and in PowerShell it is a backtick; paths work
+either way, since the script accepts forward slashes on both platforms.</p>
+
+<div class="callout">
+  <span class="label">Version compatibility</span>
+  The script runs unmodified on both the pinned environment and current releases — verified end to
+  end on torch 2.11 / NumPy 2.4 as well as the torch 1.12 environment above. Two API changes had
+  previously broken it outside the pin, and both are now handled at the call site:
+  <span class="mono">torch.load</span> passes <span class="mono">weights_only=False</span> only when
+  the installed torch accepts that keyword (PyTorch 2.6 flipped its default to
+  <span class="mono">True</span>, which rejects the NumPy scalars in this checkpoint; the keyword did
+  not exist before 1.13), and <span class="mono">gaussian</span> passes its shape positionally rather
+  than as <span class="mono">newshape=</span>, which NumPy 2.1 removed.
+</div>
+
+<h4>Required inputs</h4>
+
+<table>
+  <thead><tr><th style="width:30%">Item</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">epoch-latest.pth</td><td>Trained CPM weights (349 MB). Contains a <span class="mono">state_dict</span> key whose parameter names carry a <span class="mono">module.</span> prefix from DistributedDataParallel; the loader strips it.</td></tr>
+    <tr><td class="mono">cpm_model_v2.py</td><td>Architecture definition. Must be importable.</td></tr>
+    <tr><td>An input directory</td><td>Any mixture of <span class="mono">.jpg .jpeg .png .bmp .tif .tiff</span>. Images may be any resolution; they are not modified.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <span class="label">Design constraint worth internalising</span>
+  In training (<span class="mono">insect_dataset.py</span>, lines 104–120) each image is cropped
+  to its annotated box, resized so the longer side is 224 px, and pasted into a 224×224 canvas
+  padded on the bottom and right. Measured across the 755 annotated images, those boxes occupy
+  only <strong>8%–52%</strong> of the source frame. The model has therefore never seen a specimen
+  that occupies less than roughly a tenth of its input. Reproducing this crop step is not an
+  optimisation — it is a correctness requirement.
+</div>
+
+<h2>2. Running the inference</h2>
+
+<p>The minimal invocation, which produces annotated images and a coordinate table:</p>
+
+<pre><code>python infer_unlabeled.py \
+    --input  data/images/inference \
+    --output output/qc \
+    --draw-box</code></pre>
+
+<p>The full invocation, which additionally exports everything needed for downstream ViT
+training (Section 7). <strong>This is the canonical command</strong> — it is the one to run when
+preparing a corpus for <span class="mono">pretrain.py</span>:</p>
+
+<pre><code>python infer_unlabeled.py \
+    --input       &lt;raw_images_dir&gt; \
+    --output      output/qc \
+    --save-crops  data/crops \
+    --list-file   data/pretrain_list.txt \
+    --align-size  320 \
+    --align-fill  0.95 \
+    --align-fallback crop</code></pre>
+
+<p>Read that as two destinations with two very different lifetimes.
+<span class="mono">data/crops</span> is the <em>product</em>: the cropped-and-aligned specimen images
+that pre-training actually consumes, plus <span class="mono">data/pretrain_list.txt</span>, the
+manifest naming them. <span class="mono">output/qc</span> is <em>scaffolding</em>: the
+<span class="mono">pred_*.jpg</span> overlays and <span class="mono">keypoints.csv</span> you inspect
+to confirm the run was sane, and which you can delete afterwards.</p>
+
+<div class="callout">
+  <span class="label">There is one export directory, not two</span>
+  Earlier revisions of this guide described a separate <span class="mono">aligned/</span> directory
+  alongside <span class="mono">crops/</span>, as though cropping and aligning were two stages you
+  could run independently. <strong>They are not, and they never were.</strong> The similarity
+  transform in <span class="mono">align_crop</span> crops, rotates and rescales in a single
+  <span class="mono">warpAffine</span> — there is no intermediate cropped-but-unaligned image for a
+  second directory to hold. Everything <span class="mono">--save-crops</span> writes is already both
+  cropped and aligned, so <span class="mono">data/crops</span> is the only export path you need and
+  the only one you should point <span class="mono">pretrain.py</span> at. If you have an
+  <span class="mono">output/aligned/</span> folder left over from an older run, it is dead weight;
+  delete it.
+</div>
+
+<h3>2.1 How a box is obtained</h3>
+
+<p>Three strategies, selected with <span class="mono">--box-mode</span>:</p>
+
+<table>
+  <thead><tr><th style="width:14%">Mode</th><th>Mechanism and when to use it</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="mono">auto<br><em>(default)</em></td>
+      <td><strong>Segments the specimen automatically.</strong> These are microscope images in which
+      the animal is pigmented while the background — filter paper, mesh lines, dust, scratches — is
+      essentially colourless. The image is converted to HSV, the <em>saturation</em> channel is blurred
+      and Otsu-thresholded, morphological opening and closing remove speckle, and the largest remaining
+      contour is taken as the specimen. That contour's bounding rectangle is then squared up and
+      expanded by <span class="mono">--margin</span>, because pale legs and antennae fall below the
+      saturation threshold and would otherwise be clipped.</td>
+    </tr>
+    <tr>
+      <td class="mono">file</td>
+      <td>Reads boxes from a JSON file: <span class="mono">{"name.jpg": [x1, y1, x2, y2], ...}</span>.
+      Use when auto-detection fails, when a frame contains several specimens, or when you have boxes
+      from a detector or an annotation tool. Images absent from the JSON are skipped with a warning.</td>
+    </tr>
+    <tr>
+      <td class="mono">full</td>
+      <td>Uses the entire frame as the box. Correct <em>only</em> if your images are already tight
+      specimen crops. On a raw frame this is the failure mode described in Section 6.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <span class="label">Assumptions built into auto mode</span>
+  Auto-detection takes the <strong>single largest</strong> saturated blob. It will therefore mis-handle
+  a frame containing two specimens (it picks one, or worse, a box spanning both), and it will fail if
+  coloured debris is larger than the animal or if the background is tinted rather than neutral. It
+  worked on all four test frames, but it is a heuristic, not a detector. Always inspect the
+  <span class="mono">pred_*.jpg</span> overlays with <span class="mono">--draw-box</span> before
+  trusting a batch.
+</div>
+
+<h2>3. Parameter reference</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:20%">Parameter</th><th style="width:13%">Default</th><th>Meaning and effect</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="mono">--input</td><td class="mono">data/images/inference</td>
+        <td>Directory of images to process. <strong>Searched recursively</strong>, and any subdirectory structure — typically one folder per class — is mirrored in both <span class="mono">--output</span> and <span class="mono">--save-crops</span>. This preserves labels carried by the folder layout, and prevents a <span class="mono">001.jpg</span> in two different class folders from overwriting one another.</td></tr>
+    <tr><td class="mono">--output</td><td class="mono">output/inference</td>
+        <td>Destination for <span class="mono">pred_*.jpg</span> overlays and <span class="mono">keypoints.csv</span>. Created if absent. One full-resolution overlay is written per input image — useful on a test batch, but roughly 460 KB each over a large corpus, so pass <span class="mono">--no-vis</span> once you are past QC.</td></tr>
+    <tr><td class="mono">--checkpoint</td><td class="mono">epoch-latest.pth</td>
+        <td>Trained weights. Swap this to compare training runs.</td></tr>
+    <tr><td class="mono">--box-mode</td><td class="mono">auto</td>
+        <td><span class="mono">auto</span> | <span class="mono">file</span> | <span class="mono">full</span>. See Section 2.1.</td></tr>
+    <tr><td class="mono">--boxes</td><td class="mono">boxes.json</td>
+        <td>Path to the JSON box file. Only read when <span class="mono">--box-mode file</span>.</td></tr>
+    <tr><td class="mono">--margin</td><td class="mono">0.15</td>
+        <td>Fractional expansion of the auto-detected box. At 0.15 the box side grows by 30% total (15% each side). <strong>Raise</strong> if legs or antennae are being cut off; <strong>lower</strong> if the crop is dominated by background. This is the single most influential knob on accuracy, because it sets how much of the 224 canvas the animal fills — which is exactly the quantity the training distribution fixed.</td></tr>
+    <tr><td class="mono">--topk</td><td class="mono">5</td>
+        <td>Number of heatmap peaks averaged when converting a heatmap to a coordinate (Section 5.2). <span class="mono">1</span> gives a pure arg-max. Measured effect on the test images: about 10 px, i.e. negligible, because the top five cells are adjacent.</td></tr>
+    <tr><td class="mono">--device</td><td class="mono">cuda</td>
+        <td>Falls back to CPU automatically if CUDA is unavailable. CPU inference works but is roughly an order of magnitude slower.</td></tr>
+    <tr><td class="mono">--draw-box</td><td class="mono">off</td>
+        <td>Draws the crop box in green on the overlay. Strongly recommended — it is the only way to see whether auto-detection did something sensible.</td></tr>
+    <tr><td class="mono">--no-vis</td><td class="mono">off</td>
+        <td>Suppresses the <span class="mono">pred_*.jpg</span> overlays entirely. <span class="mono">keypoints.csv</span> is still written, so no coordinate or confidence is lost — only the pictures. Pair it with <span class="mono">--save-crops</span> when you want the exported corpus and nothing else. Measured on the test set, the overlays cost about <strong>460 KB per image</strong>; suppressing them took the <span class="mono">--output</span> tree from 6.9 MB to 3 KB across 15 images, and skips a full-resolution JPEG encode per frame.</td></tr>
+  </tbody>
+</table>
+
+<h4>Export parameters (for downstream training)</h4>
+
+<table>
+  <thead>
+    <tr><th style="width:20%">Parameter</th><th style="width:13%">Default</th><th>Meaning and effect</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="mono">--save-crops</td><td class="mono">off</td>
+        <td><strong>The one export directory that matters.</strong> Its contents are simultaneously cropped and pose-normalised (Section 7.3): the similarity transform crops, rotates and rescales in a single operation, so there is no separate "aligned" output and no second directory to manage. Written at <span class="mono">--align-size</span> rather than 224 because MAE applies its own <span class="mono">RandomResizedCrop</span> and needs headroom to sample from.</td></tr>
+    <tr><td class="mono">--align-pair</td><td class="mono">4,8</td>
+        <td>The two keypoint IDs whose connecting line defines the body axis. Sets the output <em>rotation</em>. <strong>You should validate this choice against your annotation protocol</strong> — the repository stores only integer IDs, so the anatomical meaning of "keypoint 4" is not recoverable from the code.</td></tr>
+    <tr><td class="mono">--align-size</td><td class="mono">256</td>
+        <td>Side length of the aligned output. Keep it above 224 so <span class="mono">RandomResizedCrop(224)</span> still has room to jitter. <strong>320 is the better choice for MAE:</strong> at <span class="mono">scale=(0.2, 1.0)</span> the low end samples about 45% linear, so a 256 px source yields a 114 px region upsampled 2× to 224 — visibly soft. From 320 that becomes 143 px, a 1.6× upsample, for roughly 1.6× the disk.</td></tr>
+    <tr><td class="mono">--align-scale-mode</td><td class="mono">box</td>
+        <td>What sets the zoom. <span class="mono">box</span> derives it from the detected specimen extent, so every crop shows the animal at the same apparent size; keypoints then contribute rotation only. <span class="mono">keypoints</span> is the legacy behaviour, scaling so the anchor axis spans a fixed length — see the warning in Section 7.3 before selecting it.</td></tr>
+    <tr><td class="mono">--align-fill</td><td class="mono">0.95</td>
+        <td>With <span class="mono">--align-scale-mode box</span>, the fraction of the output side spanned by the specimen box. At 0.95 the animal nearly fills the frame with a thin margin; lower it to include more surroundings. This is the knob that controls framing — <span class="mono">--align-span</span> no longer does.</td></tr>
+    <tr><td class="mono">--align-span</td><td class="mono">0.30</td>
+        <td>Fraction of the output height spanned by the anchor axis, centred. <strong>Only consulted when <span class="mono">--align-scale-mode keypoints</span></strong>; it has no effect under the <span class="mono">box</span> default.</td></tr>
+    <tr><td class="mono">--align-min-score</td><td class="mono">0.3</td>
+        <td>A specimen is treated as unalignable when either anchor keypoint scores below this. A similarity transform built on an uncertain keypoint produces a confidently wrong rotation, which is worse for training than no alignment at all.</td></tr>
+    <tr><td class="mono">--align-fallback</td><td class="mono">skip</td>
+        <td>What to export for unalignable specimens. <span class="mono">skip</span> omits them entirely, keeping the directory purely aligned; <span class="mono">crop</span> exports the plain bounding-box crop letterboxed to <span class="mono">--align-size</span>, trading pose consistency for a larger pre-training set. The <span class="mono">crop</span> column of <span class="mono">keypoints.csv</span> records which path each image took. <strong>Prefer <span class="mono">crop</span> for MAE pre-training</strong> — see the loss-rate warning below.</td></tr>
+    <tr><td class="mono">--list-file</td><td class="mono">off</td>
+        <td>Writes absolute paths of exported images, one per line — the manifest format expected by <span class="mono">ImageDatasetListV2</span> in <span class="mono">pretrain.py</span>. Only successfully exported crops are listed, so the manifest stays in sync with <span class="mono">--save-crops</span> automatically.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <span class="label">Check your loss rate before committing to a long run</span>
+  On the 16-image test set at <span class="mono">--align-min-score 0.3</span>, the default
+  <span class="mono">--align-fallback skip</span> discarded <strong>7 of 16 specimens — 44%</strong>.
+  That rate is a property of your imagery and model confidence, not a fixed constant, so measure it on
+  your own corpus by counting the <span class="mono">crop</span> column of
+  <span class="mono">keypoints.csv</span>. For MAE the trade is usually clear: reconstruction is
+  self-supervised and tolerates imperfect pose far better than it tolerates a 44% smaller corpus, so
+  <span class="mono">--align-fallback crop</span> is the right default there. Reserve
+  <span class="mono">skip</span> for supervised fine-tuning, where pose consistency earns more.
+</div>
+
+<h2 class="pagebreak">4. Reading the output files</h2>
+
+<p>A complete run of the canonical command in Section 2 produces two trees. Given a nested input
+tree of class folders:</p>
+
+<pre><code>&lt;raw_images_dir&gt;/
+├── Acari/            Acari_1.jpg, 001.jpg, ...
+├── Aranae/           Aranae_1.jpg, ...
+└── Coleoptera/
+    ├── frontal/      Coleoptera_1.jpg, 001.jpg, ...
+    └── lateral/      Coleoptera_2.jpg, ...</code></pre>
+
+<p>you get back the <em>same</em> structure in both destinations:</p>
+
+<pre><code>data/                                     <- the product; this is what you keep
+├── crops/                                <- cropped AND aligned, one image per specimen
+│   ├── Acari/            Acari_1.jpg, 001.jpg, ...
+│   ├── Aranae/           Aranae_1.jpg, ...
+│   └── Coleoptera/
+│       ├── frontal/      Coleoptera_1.jpg, 001.jpg, ...
+│       └── lateral/      Coleoptera_2.jpg, ...
+└── pretrain_list.txt                     <- manifest of exported paths   (--list-file)
+
+output/qc/                                <- scaffolding; safe to delete after inspection
+├── keypoints.csv                         <- the quantitative result, one row per input
+├── Acari/           pred_Acari_1.jpg, pred_001.jpg, ...
+└── Coleoptera/frontal/  pred_Coleoptera_1.jpg, ...</code></pre>
+
+<p>Two consequences of the mirroring worth noting. Class labels carried by the folder layout
+survive the export, so <span class="mono">torchvision.datasets.ImageFolder</span> can be pointed
+straight at <span class="mono">data/crops</span> when you later fine-tune for classification. And
+because each class keeps its own subdirectory, the two distinct <span class="mono">001.jpg</span>
+files above remain two distinct files rather than one silently overwriting the other.</p>
+
+<p><span class="mono">keypoints.csv</span> sits at the root of the QC tree, not inside each class
+folder; its <span class="mono">filename</span> column carries the path relative to
+<span class="mono">--input</span> (e.g. <span class="mono">Coleoptera/frontal/001.jpg</span>), which
+is what keeps those rows unambiguous across classes.</p>
+
+<h3>4.1 keypoints.csv — column reference</h3>
+
+<p>One row per successfully processed image, 18 columns.</p>
+
+<table>
+  <thead><tr><th style="width:22%">Column</th><th style="width:12%">Type</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">filename</td><td>string</td><td>Path relative to <span class="mono">--input</span>, forward-slashed — <span class="mono">Coleoptera/frontal/001.jpg</span> for a nested tree, plain <span class="mono">001.jpg</span> for a flat one. Join key back to your source data, and the leading component doubles as the class label when the input is organised by class.</td></tr>
+    <tr><td class="mono">box</td><td>4 floats</td><td>Space-separated <span class="mono">x1 y1 x2 y2</span> of the crop box, in original-image pixels. Top-left and bottom-right corners.</td></tr>
+    <tr><td class="mono">crop</td><td>string</td><td>Which export path this image took under <span class="mono">--save-crops</span>: <span class="mono">aligned</span> (pose-normalised), <span class="mono">unaligned</span> (letterboxed fallback), <span class="mono">skipped</span> (no crop written), or empty when <span class="mono">--save-crops</span> was not used. Filter on this to keep a corpus purely aligned.</td></tr>
+    <tr><td class="mono">kp4_x, kp4_y</td><td>float</td><td>Position of keypoint 4, in <strong>original-image pixels</strong>. Origin is the top-left corner; x increases rightwards, y increases <em>downwards</em> (image convention, not Cartesian).</td></tr>
+    <tr><td class="mono">kp4_score</td><td>float</td><td>Confidence for keypoint 4. See Section 4.2.</td></tr>
+    <tr><td class="mono">kp5_* … kp8_*</td><td>float</td><td>The same triple for keypoints 5, 6, 7 and 8.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <span class="label">The columns are kp4–kp8, not kp1–kp5</span>
+  Your annotation protocol has eight keypoint IDs, but <span class="mono">insect_dataset.py</span>
+  line 147 selects channels <span class="mono">[3,4,5,6,7]</span> — zero-based — before training.
+  <strong>Keypoints 1, 2 and 3 were never trained and the model cannot predict them.</strong>
+  The column names reflect the true IDs so the CSV joins correctly against your existing
+  annotations; do not renumber them to 1–5.
+</div>
+
+<h3>4.2 What the score means</h3>
+
+<p>The score is the peak value of that keypoint's predicted heatmap — the strength of the strongest
+response anywhere in the 28×28 grid. It is <strong>not a calibrated probability.</strong> It is a
+regression output trained with mean-squared error against Gaussian targets whose peak value is 1.0,
+so it behaves like a similarity-to-an-ideal-peak measure. Values slightly outside [0, 1] are possible
+and not an error.</p>
+
+<p>Interpretation in practice:</p>
+
+<table class="tight">
+  <thead><tr><th style="width:16%">Score</th><th>Reading</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">&gt; 0.6</td><td>The model found a clear, well-localised response. Usable.</td></tr>
+    <tr><td class="mono">0.3 – 0.6</td><td>Diffuse or partially occluded. Usable in aggregate, questionable per-specimen.</td></tr>
+    <tr><td class="mono">&lt; 0.3</td><td>No real response. The coordinate is close to meaningless — it is the soft-arg-max of near-uniform noise, which drifts toward the centre of the map. <strong>Discard.</strong></td></tr>
+  </tbody>
+</table>
+
+<p>Always filter on score before analysis. A keypoint is emitted for every channel on every image
+regardless of whether the landmark is visible, so <em>the presence of a row does not imply a
+detection.</em></p>
+
+<h3>4.3 A worked example</h3>
+
+<p>Two real rows from the test run, abridged:</p>
+
+<pre><code>filename                     box                          kp4_x   kp4_y  kp4_s   kp8_x   kp8_y  kp8_s
+GRSM40_3__80.jpg             620.1 197.1 1268.8 845.9     977.12  632.92  0.650  953.88  433.58  0.993
+GRSM40_2_2025-01-01_253.jpg  773.6 181.7 1149.3 557.4     990.62  310.23  0.773  819.18  449.52  0.023</code></pre>
+
+<p>Row 1 reads: in <span class="mono">GRSM40_3__80.jpg</span>, the specimen was localised to a
+649×649 px box whose top-left corner is at pixel (620, 197). Keypoint 4 sits at pixel (977, 633)
+with moderate confidence; keypoint 8 sits at (954, 434) with very high confidence. Both coordinates
+are in the coordinate frame of the original 1920×1080 file, so they can be plotted on it directly
+with no further transformation.</p>
+
+<p>Row 2 is a cautionary case. Keypoint 4 scores 0.773 and is trustworthy. Keypoint 8 scores
+<strong>0.023</strong> — the model is telling you it did not find that landmark, and the coordinate
+(819, 450) should be dropped, not recorded as a measurement. Note that the CSV gives you no other
+signal that these two numbers differ in quality; the score column is the whole mechanism.</p>
+
+<h2>5. What the numbers actually mean</h2>
+
+<p>To use these coordinates as scientific measurements you need to know the chain of transformations
+they came through, because each one bounds the achievable precision.</p>
+
+<h3>5.1 The coordinate chain</h3>
+
+<div class="eq">
+original image  --crop--&gt;  crop  --resize--&gt;  224x224 canvas  --network--&gt;  28x28 heatmap
+</div>
+
+<p>The network's native output is a 28×28 grid per keypoint. Predictions are produced in that grid
+and then mapped back. Forward, for the resize step:</p>
+
+<div class="eq">
+scale = min( 224 / crop_width , 224 / crop_height )
+</div>
+
+<p>and the inverse, applied at <span class="mono">infer_unlabeled.py</span> lines 219–221, recovers
+original-image pixels:</p>
+
+<div class="eq">
+x_original = x_224 / scale + x1<br>
+y_original = y_224 / scale + y1
+</div>
+
+<p>where <span class="mono">(x1, y1)</span> is the box's top-left corner. Because the training
+pipeline pads only the bottom and right of the canvas, the origin is preserved and no padding
+offset enters the inverse.</p>
+
+<h3>5.2 From heatmap to coordinate</h3>
+
+<p>A heatmap cell index is converted to a sub-cell coordinate by a soft-arg-max over the
+<span class="mono">--topk</span> strongest cells:</p>
+
+<div class="eq">
+1.&nbsp; flatten each 28x28 channel; take the k largest values s_j at flat indices n_j<br>
+2.&nbsp; recover 2-D:&nbsp; c_j = n_j mod 28&nbsp; (column, x)&nbsp;&nbsp; r_j = n_j div 28&nbsp; (row, y)<br>
+3.&nbsp; weights:&nbsp;&nbsp;&nbsp;&nbsp; w_j = exp(s_j) / SUM_m exp(s_m)<br>
+4.&nbsp; estimate:&nbsp;&nbsp;&nbsp; x_224 = 8 * SUM_j w_j * c_j&nbsp;&nbsp;&nbsp;&nbsp; y_224 = 8 * SUM_j w_j * r_j
+</div>
+
+<p>The factor 8 is the network stride, 224 ÷ 28. One caveat on step 3: raw heatmap values lie
+roughly in [0, 1], so the exponential compresses them and the largest achievable weight ratio is
+about 2.7 : 1. The softmax is therefore nearly uniform, making this closer to an unweighted mean of
+the top-k cells than to a peak-weighted one. On well-behaved images this is harmless because the
+top cells are adjacent. It matters when a channel has two competing peaks: the estimate lands
+between them, on neither.</p>
+
+<h3>5.3 Effective spatial resolution</h3>
+
+<p>This is the number most likely to be overlooked. Because prediction happens on a 28×28 grid,
+one heatmap cell corresponds to <span class="mono">8 / scale</span> pixels of the original image —
+and <span class="mono">scale</span> depends on how large the box was:</p>
+
+<table>
+  <thead><tr><th>Image</th><th style="width:12%">Box width</th><th style="width:12%">scale</th><th style="width:20%">1 cell equals</th><th style="width:14%">Frame area</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">GRSM40_2_2025-01-01_253.jpg</td><td class="mono">376 px</td><td class="mono">0.596</td><td class="mono">13.4 px</td><td class="mono">6.8%</td></tr>
+    <tr><td class="mono">GRSM40_2_2025-01-01_254.jpg</td><td class="mono">357 px</td><td class="mono">0.627</td><td class="mono">12.8 px</td><td class="mono">6.2%</td></tr>
+    <tr><td class="mono">GRSM40_3__80.jpg</td><td class="mono">649 px</td><td class="mono">0.345</td><td class="mono">23.2 px</td><td class="mono">20.3%</td></tr>
+    <tr><td class="mono">GRSM40_3__81.jpg</td><td class="mono">620 px</td><td class="mono">0.361</td><td class="mono">22.1 px</td><td class="mono">18.5%</td></tr>
+  </tbody>
+</table>
+
+<p>So a coordinate reported as <span class="mono">977.12</span> carries about seven times fewer
+significant figures than the two decimal places suggest. The sub-cell interpolation of Section 5.2
+buys some precision back, but <strong>the honest resolution is on the order of 10–25 original pixels,
+and it varies per image with box size.</strong> If you intend to report morphometric distances,
+propagate this: the same specimen photographed with a slightly different auto-box will produce
+slightly different numbers.</p>
+
+<p>A secondary, smaller effect: both encoding (<span class="mono">insect_dataset.py</span> line 140,
+which floors) and decoding (multiply by 8) use the cell's top-left corner rather than its centre.
+This introduces a systematic bias of a few pixels toward the top-left, which largely cancels between
+the two directions.</p>
+
+<h2>6. Precision limits and reliability</h2>
+
+<p>Four issues that bear directly on whether a result is publishable.</p>
+
+<h3>6.1 Keypoints 5 and 7 are entangled</h3>
+
+<p>In profile views the annotation protocol collects only six points, and
+<span class="mono">insect_dataset.py</span> lines 93–95 fills the two missing IDs by duplication:</p>
+
+<pre><code>lmks[3-1] = lmks[2-1]      # kp3 := kp2   (later discarded — harmless)
+lmks[7-1] = lmks[5-1]      # kp7 := kp5   (kept, and trained on)</code></pre>
+
+<p>A per-keypoint mask exists to suppress this — <span class="mono">lmk_mask</span>, lines 121–124 —
+but the dataset's <span class="mono">__getitem__</span> returns only
+<span class="mono">image, heatmaps, centermap</span> at line 160, so the mask is silently discarded
+and <span class="mono">train_heatmap.py</span> line 161 applies an unmasked MSE. The older
+coordinate-regression pipeline did use it (<span class="mono">train.py</span> line 155); it appears
+to have been dropped when the heatmap pipeline was written.</p>
+
+<p><strong>Consequence:</strong> for the 328 profile images — 43% of the 755-image training set —
+the model was trained to place keypoint 7 exactly on keypoint 5. The predictions are consistent with
+this: in the test run kp5 and kp7 sit about 9 px apart on one image and share an identical y
+coordinate on another. Treat <strong>kp7 as unreliable</strong>, and do not use the kp5–kp7 distance
+as a morphometric feature. Fixing this requires restoring the mask and retraining.</p>
+
+<h3>6.2 These predictions are pseudo-labels</h3>
+
+<p>The four test images have no ground truth, so nothing in this pipeline has been validated against
+human annotation on unlabelled data. The visual overlays look correct, but "looks correct" is not a
+measured error. Before treating the output as data, annotate a held-out sample of perhaps 50 images
+by hand and compute the actual pixel error per keypoint. Until then these are model outputs, not
+measurements.</p>
+
+<h3>6.3 The box mode is not optional</h3>
+
+<p>To make the scale of this concrete: if a raw 1920×1080 frame is passed with
+<span class="mono">--box-mode full</span>, <span class="mono">scale</span> becomes 0.117 and one
+heatmap cell spans <strong>69 original pixels</strong>. A 649 px specimen would occupy just
+9.5 cells of the 28-cell map. This is far outside the training distribution and the resulting
+coordinates are not meaningful.</p>
+
+<h3>6.4 Normalisation differs from the ViT pipeline</h3>
+
+<p>The CPM pipeline uses a bare <span class="mono">ToTensor()</span>
+(<span class="mono">insect_dataset.py</span> line 17) — pixels scaled to [0, 1] with no mean/std
+normalisation. The MAE scripts in <span class="mono">pretrain.py</span> and
+<span class="mono">finetune.py</span> apply <span class="mono">Normalize(mean=[0.485, 0.456, 0.406],
+std=[0.229, 0.224, 0.225])</span>. These are separate pipelines and do not conflict, but do not
+copy a transform from one into the other: feeding ImageNet-normalised tensors to the CPM will
+silently degrade its predictions.</p>
+
+<h2 class="pagebreak">7. Using the output to train a Vision Transformer</h2>
+
+<p>The two uploaded scripts implement the MAE recipe: <span class="mono">pretrain.py</span> performs
+self-supervised masked-autoencoder pre-training, and <span class="mono">finetune.py</span> adapts the
+resulting encoder to a classification task using the IP102 dataset. Understanding how keypoint output
+relates to each is mostly a matter of understanding what each script <em>requires</em>.</p>
+
+<div class="callout warn">
+  <span class="label">Start here: what the output cannot do</span>
+  <p style="margin-bottom:.4em"><strong>Keypoint coordinates are not classification labels, and they
+  cannot be fed to <span class="mono">finetune.py</span> as-is.</strong> That script builds
+  <span class="mono">IP102(args.data_path, split='train')</span> and optimises
+  <span class="mono">CrossEntropyLoss</span> (or its label-smoothed and mixup variants) against
+  integer class indices. It expects an answer to "which species is this?". Your pipeline answers
+  "where is landmark 4?". No amount of reformatting converts one into the other.</p>
+  <p style="margin-bottom:0">To fine-tune for classification you still need taxonomic labels. What
+  the keypoint output <em>can</em> do is make that fine-tuning work better, via the paths below.</p>
+</div>
+
+<h3>7.1 Path A — MAE pre-training on specimen crops (recommended, strongest fit)</h3>
+
+<p>This is the natural use, because <span class="mono">pretrain.py</span> is
+<strong>self-supervised</strong>: it masks 75% of the image patches and reconstructs them, so it
+consumes images and needs no labels whatsoever. Unlabelled microscope frames are exactly what it
+wants — and they are exactly what you have.</p>
+
+<p>The contribution of the keypoint pipeline here is not the keypoints; it is the <em>bounding box</em>.
+Consider what happens without it. The specimen occupies 6–20% of a raw frame (Section 5.3). The
+training transform is:</p>
+
+<pre><code>transforms.RandomResizedCrop(224, scale=(0.2, 1.0), interpolation=3)   # pretrain.py</code></pre>
+
+<p>Sampling a region covering 20%–100% of a frame in which the animal covers 6% means the
+overwhelming majority of training crops would contain <strong>no specimen at all</strong> — the model
+would spend its capacity learning to reconstruct filter paper and mesh lines. Pre-cropping to the
+detected box raises the specimen's share of every sampled view by roughly an order of magnitude.</p>
+
+<pre><code># 1. Detect specimens and export cropped-and-aligned images + a manifest
+python infer_unlabeled.py \
+    --input       &lt;raw_images_dir&gt; \
+    --output      output/qc \
+    --save-crops  data/crops \
+    --list-file   data/pretrain_list.txt \
+    --align-size  320 \
+    --align-fill  0.95 \
+    --align-fallback crop
+
+# 2. Self-supervised pre-training on those crops
+python pretrain.py \
+    --data_path   data/pretrain_list.txt \
+    --model       mae_vit_large_patch16 \
+    --batch_size  64 \
+    --mask_ratio  0.75 \
+    --epochs      400 \
+    --warmup_epochs 40 \
+    --blr         1e-3 \
+    --norm_pix_loss \
+    --output_dir  output_dir/mae_insect</code></pre>
+
+<p>Three mechanical notes. First, <span class="mono">--data_path</span> is
+<strong>the manifest file itself, not a directory</strong> — <span class="mono">ImageDatasetListV2</span>
+opens it and reads one path per line, which the <span class="mono">--list-file</span> export writes
+to match. The <span class="mono">/datasets01/imagenet_full_size/061417/</span> default in
+<span class="mono">pretrain.py</span> looks like a directory and misleads on this point.</p>
+
+<p>Second, note that pre-training does <strong>not</strong> use your class folders:
+<span class="mono">ImageDatasetListV2.__getitem__</span> returns
+<span class="mono">(image, ref_image, 0)</span> — a hard-coded zero label — because MAE is
+self-supervised and has no use for labels. The mirrored structure in
+<span class="mono">data/crops</span> costs nothing here and pays off later, at the supervised
+fine-tuning stage, where <span class="mono">ImageFolder</span> can read those same folders as classes.
+Third, the learning rate is derived, not absolute:</p>
+
+<div class="eq">
+lr = blr × (batch_size × accum_iter × num_gpus) / 256
+</div>
+
+<p>so changing batch size without touching <span class="mono">--blr</span> automatically rescales it.
+Set <span class="mono">--lr</span> directly only if you want to override this.</p>
+
+<div class="callout warn">
+  <span class="label">Scale requirement</span>
+  MAE pre-training of a ViT-Large is data-hungry: the recipe's 400 epochs and 40-epoch warm-up assume
+  a corpus on the order of 10<sup>5</sup>–10<sup>6</sup> images. Four crops, or four hundred, will
+  overfit immediately and produce a worse encoder than the public ImageNet MAE checkpoint. If your
+  unlabelled collection is small, initialise from a released MAE checkpoint and treat this as
+  domain-adaptive continued pre-training, or use <span class="mono">mae_vit_base_patch16</span>
+  instead of large. The crop pipeline is worth building precisely because it lets you run it over
+  every frame you have ever collected without annotating any of them.
+</div>
+
+<h3>7.2 Path B — carrying the encoder into fine-tuning</h3>
+
+<p>Once pre-training has produced a checkpoint, <span class="mono">finetune.py</span> loads it. One
+detail in that script is worth flagging because it silently determines whether the weights actually
+transfer:</p>
+
+<pre><code>for k in checkpoint_model:
+    if k.startswith('img_encoder.'):
+        new_k = k.replace('img_encoder.', '')      # finetune.py
+        new_state_dict[new_k] = checkpoint_model[k]</code></pre>
+
+<p>The loader expects encoder parameters stored under an <span class="mono">img_encoder.</span>
+prefix and strips it. It then calls <span class="mono">load_state_dict(..., strict=False)</span> and
+asserts that the only missing keys are the classifier head and <span class="mono">fc_norm</span>. If
+your checkpoint's parameter names do not match this convention, <span class="mono">strict=False</span>
+will let it load <em>silently with random weights</em> and the assertion is your only warning. Read
+the printed <span class="mono">msg</span> — it enumerates missing and unexpected keys, and anything
+beyond the four expected head parameters means the transfer did not happen.</p>
+
+<p>Fine-tuning then requires labelled data, with layer-wise learning-rate decay
+(<span class="mono">--layer_decay 0.75</span>) so early layers move less than late ones:</p>
+
+<pre><code>python finetune.py \
+    --finetune    output_dir/mae_insect/checkpoint-399.pth \
+    --data_path   data/your_labelled_set \
+    --nb_classes  &lt;number of taxa&gt; \
+    --model       vit_large_patch16 \
+    --epochs      50 \
+    --blr         1e-3 \
+    --layer_decay 0.75 \
+    --output_dir  output_dir/ft_insect</code></pre>
+
+<p>Note that <span class="mono">--data_path</span> here is passed to the hard-coded
+<span class="mono">IP102</span> class, so pointing it at your own data requires either matching
+IP102's directory layout or substituting your own <span class="mono">Dataset</span>.</p>
+
+<h3>7.3 Path C — pose alignment (this is where the keypoints themselves earn their keep)</h3>
+
+<p>The keypoints enable a preprocessing step that boxes alone cannot: normalising away the
+specimen's rotation and scale. This is the standard trick from face recognition, and it is what the
+project directory name — <span class="mono">alignment</span> — refers to.</p>
+
+<p>Given two predicted keypoints <span class="mono">p_a</span> and <span class="mono">p_b</span>,
+there is a unique similarity transform (rotation, uniform scale, translation) carrying them to two
+fixed canonical positions <span class="mono">q_a</span> and <span class="mono">q_b</span>:</p>
+
+<div class="eq">
+theta = atan2(q_b - q_a) - atan2(p_b - p_a)<br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [ s·cos(theta)&nbsp; -s·sin(theta)&nbsp;&nbsp; t_x ]<br>
+M&nbsp;&nbsp;&nbsp; = [ s·sin(theta)&nbsp;&nbsp; s·cos(theta)&nbsp;&nbsp; t_y ]
+</div>
+
+<p>The rotation <span class="mono">theta</span> always comes from the anchor pair. The scale
+<span class="mono">s</span> is the part you choose, via <span class="mono">--align-scale-mode</span>:</p>
+
+<div class="eq">
+box&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; s = (align_size × align_fill) / box_side&nbsp;&nbsp;&nbsp; t = centre - R·box_centre<br>
+keypoints&nbsp; s = |q_b - q_a| / |p_b - p_a|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; t = q_a - R·p_a
+</div>
+
+<p>Applying <span class="mono">M</span> with <span class="mono">cv2.warpAffine</span> yields an image
+in which the chosen body axis is always vertical and always centred. Under the
+<span class="mono">box</span> default the specimen also arrives at a consistent apparent size,
+independent of how close the original photograph was taken.</p>
+
+<div class="callout warn">
+  <span class="label">Why the default is <span class="mono">box</span>, not <span class="mono">keypoints</span></span>
+  <p>Deriving <span class="mono">s</span> from the anchor distance normalises
+  <span class="mono">|kp4 − kp8|</span> to a fixed length, which sounds reasonable and
+  <strong>inverts the framing in practice</strong>. Because <span class="mono">s</span> is inversely
+  proportional to that distance, a specimen photographed <em>closer</em> has a larger anchor
+  separation and therefore comes out <em>smaller</em>.</p>
+  <p>The anchor span is a poor proxy for body size for two independent reasons. It depends on pose and
+  anatomy — on a lateral beetle, kp4 and kp8 sit at opposite ends of the body; on a dorsal mite they
+  both sit on the idiosoma. And it is the noisiest quantity the model emits: a low-confidence pair
+  collapses toward a single blob centre, shrinking the denominator and inflating the zoom.</p>
+  <p>Measured on the test set, this produced an <strong>8.5× spread</strong> in apparent specimen size.
+  <span class="mono">Coleoptera_2</span> came out at 46% of frame while
+  <span class="mono">GRSM40_3__80</span> filled 97%; <span class="mono">GRSM40_3__81</span>, whose
+  anchors collapsed to 58 px apart, was scaled to <strong>322%</strong> — an unusable magnified patch
+  of cuticle. Under <span class="mono">box</span> all nine exports land at a uniform 95%. Select
+  <span class="mono">keypoints</span> only if you specifically need the anchor axis at a fixed length
+  and have verified your anchor confidences are uniformly high.</p>
+</div>
+
+<p>The benefit is a capacity argument. A ViT trained on unaligned crops must learn rotation and
+scale invariance from data, spending parameters and training signal on nuisance variation. Removing
+that variation analytically lets the model devote itself to morphology — which is the actual
+signal for taxonomic discrimination. The effect is largest when labelled data is scarce, which is
+the usual situation in this domain.</p>
+
+<p>There is no separate command for this path. Alignment is not a stage you bolt on after cropping —
+it <em>is</em> the cropping, performed by the same <span class="mono">warpAffine</span>. The canonical
+command from Section 2 already produces aligned output; the flags below simply spell out the
+alignment-related defaults it is using:</p>
+
+<pre><code>python infer_unlabeled.py \
+    --input       &lt;raw_images_dir&gt; \
+    --output      output/qc \
+    --save-crops  data/crops \
+    --list-file   data/pretrain_list.txt \
+    --align-pair  4,8 \
+    --align-size  320 \
+    --align-scale-mode box \
+    --align-fill  0.95 \
+    --align-min-score 0.3 \
+    --align-fallback crop</code></pre>
+
+<p>Three cautions specific to this path:</p>
+
+<ul>
+  <li><strong>Choose the anchor pair deliberately.</strong> The default <span class="mono">4,8</span>
+  was selected because those two points are the most widely separated in the test data, and a longer
+  baseline makes the angle estimate more stable. It is a geometric choice, not an anatomical one — the
+  repository does not record what the IDs mean. <strong>Do not use kp7 as an anchor</strong> (Section 6.1).</li>
+  <li><strong>Alignment amplifies keypoint error.</strong> An error in either anchor rotates the entire
+  image. This is why <span class="mono">--align-min-score</span> exists and why it should not be lowered
+  casually; in the test run it correctly rejected an image whose kp8 scored 0.023. Expect to lose some
+  fraction of your corpus, and prefer losing it to aligning it wrongly.</li>
+  <li><strong>Reconsider the augmentation.</strong> If you have deliberately removed rotation, then
+  <span class="mono">RandomHorizontalFlip</span> and aggressive <span class="mono">RandomResizedCrop</span>
+  scale jitter partially reintroduce it. Consider narrowing the crop scale range, e.g.
+  <span class="mono">scale=(0.6, 1.0)</span>, when training on aligned images.</li>
+</ul>
+
+<h3>7.4 Path D — keypoints as auxiliary supervision (requires new code)</h3>
+
+<p>The most ambitious option is to attach a keypoint-regression head to the ViT alongside the
+classification head and train both, so that landmark localisation acts as an auxiliary task shaping
+the shared representation. This is a well-established way to improve fine-grained classification.</p>
+
+<p>It is not supported by the uploaded scripts and would require: a dataset class returning
+<span class="mono">(image, class_label, keypoints)</span>; a regression head on the encoder output;
+and a combined loss <span class="mono">L = L_cls + λ·L_kp</span>. Note also that training on
+CPM-predicted keypoints means distilling one model's errors into another, so the human annotations
+in <span class="mono">kp_data.pkl</span> would be the better supervision source where they exist.
+Mentioned for completeness; Paths A and C give most of the benefit for far less work.</p>
+
+<h3>7.5 Choosing among the paths</h3>
+
+<table>
+  <thead><tr><th style="width:9%">Path</th><th style="width:26%">Uses</th><th style="width:24%">Needs labels?</th><th>Best when</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A</strong></td><td>Boxes only</td><td>No</td><td>You have many unlabelled frames. The default starting point.</td></tr>
+    <tr><td><strong>B</strong></td><td>Path A's encoder</td><td>Yes — taxonomic</td><td>You have a labelled set and want a classifier.</td></tr>
+    <tr><td><strong>C</strong></td><td>Boxes + keypoints</td><td>No (pre-train) / Yes (fine-tune)</td><td>Specimen orientation varies widely; labelled data is scarce.</td></tr>
+    <tr><td><strong>D</strong></td><td>Keypoints as targets</td><td>Yes, plus new code</td><td>A and C are exhausted and you need further gains.</td></tr>
+  </tbody>
+</table>
+
+<h2>8. Command cookbook</h2>
+
+<h4>Inspect a new batch before trusting it</h4>
+<pre><code>python infer_unlabeled.py --input data/new_batch --output output/check --draw-box
+# then open output/check/pred_*.jpg and confirm the green boxes contain whole specimens</code></pre>
+
+<h4>Legs being clipped — widen the box</h4>
+<pre><code>python infer_unlabeled.py --input data/new_batch --output output/check --margin 0.30 --draw-box</code></pre>
+
+<h4>Auto-detection failing — supply boxes by hand</h4>
+<pre><code>echo '{"img_001.jpg": [620, 197, 1269, 846]}' &gt; boxes.json
+python infer_unlabeled.py --input data/new_batch --box-mode file --boxes boxes.json --output output/check</code></pre>
+
+<p>Keys may be either the bare filename or the path relative to <span class="mono">--input</span>
+(<span class="mono">Coleoptera/frontal/001.jpg</span>); both resolve.</p>
+
+<h4>Export crops only, no overlays</h4>
+<p>Once you have QC'd a sample and trust the run, drop the overlays. The crop tree still mirrors
+your input folder structure, and <span class="mono">keypoints.csv</span> is still written for auditing.</p>
+<pre><code>python infer_unlabeled.py \
+    --input       &lt;raw_images_dir&gt; \
+    --output      output/qc \
+    --save-crops  data/crops \
+    --list-file   data/pretrain_list.txt \
+    --align-size  320 \
+    --align-fill  0.95 \
+    --align-fallback crop \
+    --no-vis</code></pre>
+
+<h4>Build an MAE pre-training corpus from an entire unlabelled archive</h4>
+<p>The canonical command. Output is cropped and aligned in one pass, into one directory.</p>
+<pre><code>python infer_unlabeled.py \
+    --input       &lt;raw_images_dir&gt; \
+    --output      output/qc \
+    --save-crops  data/crops \
+    --list-file   data/pretrain_list.txt \
+    --align-size  320 \
+    --align-fill  0.95 \
+    --align-fallback crop</code></pre>
+
+<h4>The same corpus, keeping only confidently aligned specimens</h4>
+<p>Swap the fallback. This does not produce a different <em>kind</em> of output — it produces the
+same cropped-and-aligned images, minus the ones whose anchors were too uncertain to trust. Check the
+resulting row count against <span class="mono">keypoints.csv</span> before relying on it.</p>
+<pre><code>python infer_unlabeled.py \
+    --input       &lt;raw_images_dir&gt; \
+    --output      output/qc \
+    --save-crops  data/crops_strict \
+    --list-file   data/crops_strict_list.txt \
+    --align-size  320 \
+    --align-fill  0.95 \
+    --align-min-score 0.5 \
+    --align-fallback skip</code></pre>
+
+<h4>Frame the specimen more loosely</h4>
+<p>Lower <span class="mono">--align-fill</span> to leave more background around the animal.
+<span class="mono">--align-span</span> has no effect here — it applies only under
+<span class="mono">--align-scale-mode keypoints</span>.</p>
+<pre><code>python infer_unlabeled.py --input &lt;raw_images_dir&gt; --output output/qc \
+    --save-crops data/crops --align-fill 0.75</code></pre>
+
+<h4>Count how many specimens survived the export</h4>
+<pre><code>python -c "import pandas as pd; print(pd.read_csv('output/qc/keypoints.csv')['crop'].value_counts())"</code></pre>
+
+<h4>Filter the CSV to reliable keypoints only</h4>
+<pre><code>import pandas as pd
+df = pd.read_csv("output/qc/keypoints.csv")
+for kp in ["kp4", "kp5", "kp6", "kp7", "kp8"]:
+    weak = df[f"{kp}_score"] < 0.3
+    df.loc[weak, [f"{kp}_x", f"{kp}_y"]] = pd.NA     # blank unreliable coordinates
+df = df.drop(columns=["kp7_x", "kp7_y", "kp7_score"])  # see Section 6.1</code></pre>
+
+<div class="callout">
+  <span class="label">Summary of the honest caveats</span>
+  <ul class="tight" style="margin-bottom:0">
+    <li>Only keypoints 4–8 exist; 1–3 were never trained.</li>
+    <li>Keypoint 7 is contaminated by a dropped training mask — do not use it.</li>
+    <li>Spatial resolution is 10–25 original pixels and varies per image with box size.</li>
+    <li>Scores below 0.3 mean "not found", not "found here"; filter on them.</li>
+    <li>Auto box detection assumes one pigmented specimen on a neutral background.</li>
+    <li>No accuracy has been measured on unlabelled data — validate against hand annotation before publishing.</li>
+    <li>Keypoints cannot be used as classification labels for <span class="mono">finetune.py</span>.</li>
+  </ul>
+</div>
+
+</body>
+</html>
