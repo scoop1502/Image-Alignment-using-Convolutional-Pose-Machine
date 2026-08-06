@@ -6,7 +6,10 @@ cropped to the annotated bounding box, then resized so the long side is 224 and
 zero-padded bottom/right).  So at inference time we must supply a box too.
 Without annotations the box comes from one of:
 
-    --box-mode auto    : segment the insect automatically (default)
+    --box-mode auto    : segment the insect automatically (default).  The search is
+                         restricted to the middle --roi-frac of the frame, because in
+                         low-magnification shots the off-centre litter is often larger
+                         and browner than a pale specimen and would otherwise win.
     --box-mode full    : use the whole image (only correct if images are already crops)
     --box-mode file    : read boxes from a JSON file {"filename.jpg": [x1, y1, x2, y2], ...}
 
@@ -17,6 +20,14 @@ layout survive the export.  The CSV names images by their path relative to --inp
 Outputs, per image (<sub> being the image's subdirectory under --input, if any):
     <out>/<sub>/pred_<name>.jpg   visualisation on the ORIGINAL image
     <out>/keypoints.csv           keypoint coords in ORIGINAL image pixels + confidence
+
+In --box-mode auto the detector can fail to find a specimen at all -- a frame of bare
+substrate, or one where the animal is a pale speck among larger debris.  Such a frame is
+NOT silently treated as a whole-image crop: its CSV row carries box_source=no-subject,
+its keypoints are meaningless and should be filtered on that column, and it is excluded
+from --save-crops and --list-file regardless of --align-fallback, so background never
+enters the downstream training set disguised as a specimen.  The run prints a summary of
+these at the end; feed them back through --box-mode file with hand-drawn boxes.
 
 Optional exports for downstream ViT training (see docs/inference_guide.pdf):
     --save-crops DIR    pose-normalised specimen crops -- cropped AND rotated/scaled
@@ -73,13 +84,55 @@ def heatmap2coord(heatmap, topk=5):
     return coord
 
 
-def detect_box(image_np, margin=0.15, min_area_frac=1e-4):
+def select_contour(contours, w, h, roi_frac, exempt_frac):
+    """
+    Choose the specimen contour, preferring blobs near the centre of the frame.
+
+    Plain argmax(area) fails on low-magnification frames: the operator centres the
+    animal, but the litter around it is not centred and can easily be *larger* and
+    *browner* than a pale specimen, so the biggest saturated blob is a wood chip
+    rather than the mite.  Restricting the search to a centred window fixes that.
+
+    The window filters blob *centroids* only -- the chosen contour keeps its full
+    extent.  Cropping the image first would be much simpler and much wronger: the
+    lateral beetle shots span ~29% of the frame, so a 60% centre crop would slice
+    the animal and the box would then understate its true size.
+
+    A blob covering more than `exempt_frac` of the frame bypasses the window: at
+    that size it cannot be debris (the largest clutter measured here is 0.41% of
+    the frame), and refusing an obvious specimen for sitting off-centre would lose
+    more than the filter gains.
+
+    Returns the chosen contour, or None if the window left nothing.
+    """
+    if roi_frac >= 1.0:
+        return max(contours, key=cv2.contourArea)
+
+    x1, x2 = w * (1 - roi_frac) / 2.0, w * (1 + roi_frac) / 2.0
+    y1, y2 = h * (1 - roi_frac) / 2.0, h * (1 + roi_frac) / 2.0
+    exempt_area = exempt_frac * w * h
+
+    central = []
+    for c in contours:
+        bx, by, bw, bh = cv2.boundingRect(c)
+        cx, cy = bx + bw / 2.0, by + bh / 2.0
+        if (x1 <= cx <= x2 and y1 <= cy <= y2) or cv2.contourArea(c) >= exempt_area:
+            central.append(c)
+
+    if not central:
+        return None
+    return max(central, key=cv2.contourArea)
+
+
+def detect_box(image_np, margin=0.15, min_area_frac=1e-4, roi_frac=1.0,
+               roi_exempt_frac=0.05):
     """
     Locate the insect in a raw frame.
 
     These are microscope shots: the specimen is coloured (tan/brown) while the
     background -- paper, grid lines, dust -- is essentially achromatic.  So we
-    threshold the HSV saturation channel and keep the largest blob.
+    threshold the HSV saturation channel and keep the largest blob, subject to the
+    centre window described in select_contour.
 
     Returns ((x1, y1, x2, y2), side) -- the box clipped to the frame, plus the
     *unclipped* square side it was built from.  Alignment needs the latter: a
@@ -103,8 +156,8 @@ def detect_box(image_np, margin=0.15, min_area_frac=1e-4):
     if not contours:
         return None
 
-    biggest = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(biggest) < min_area_frac * h * w:
+    biggest = select_contour(contours, w, h, roi_frac, roi_exempt_frac)
+    if biggest is None or cv2.contourArea(biggest) < min_area_frac * h * w:
         return None
 
     bx, by, bw, bh = cv2.boundingRect(biggest)
@@ -384,15 +437,25 @@ def main(args):
                 print(f"  [skip] no box for {filename}")
                 continue
             box_side = max(box[2] - box[0], box[3] - box[1])
+            box_source = "manual"
         elif args.box_mode == "auto":
-            detected = detect_box(image_np, margin=args.margin)
+            detected = detect_box(image_np, margin=args.margin,
+                                  roi_frac=args.roi_frac,
+                                  roi_exempt_frac=args.roi_exempt_frac)
             if detected is None:
-                print(f"  [warn] no insect found in {filename}, falling back to full frame")
+                # Nothing convincing in frame.  Carry on so the overlay and the CSV row
+                # still document what happened, but the full-frame box below is a
+                # placeholder for drawing -- NOT a detection.  box_source carries that
+                # distinction to every consumer downstream.
+                print(f"  [no-subject] {filename}: nothing convincing found")
                 box, box_side = (0.0, 0.0, float(w), float(h)), float(max(w, h))
+                box_source = "no-subject"
             else:
                 box, box_side = detected
+                box_source = "detected"
         else:
             box, box_side = (0.0, 0.0, float(w), float(h)), float(max(w, h))
+            box_source = "full-frame"
 
         canvas, scale, ox, oy = preprocess(pil_image, box)
 
@@ -432,7 +495,15 @@ def main(args):
         if args.save_crops:
             crop = None
             reason = None
-            if min(scores[align_a], scores[align_b]) < args.align_min_score:
+            # --align-fallback deliberately does not apply to a no-subject frame: the
+            # fallback crops `box`, and here `box` is the whole frame.  Exporting it
+            # would drop a tile of pure background into the training set, labelled
+            # indistinguishably from a real specimen.
+            fallback_ok = box_source != "no-subject"
+
+            if box_source == "no-subject":
+                reason = "no subject detected"
+            elif min(scores[align_a], scores[align_b]) < args.align_min_score:
                 reason = (f"anchor score below {args.align_min_score} "
                           f"({scores[align_a]:.2f}, {scores[align_b]:.2f})")
             else:
@@ -451,13 +522,13 @@ def main(args):
 
             status = "aligned"
             if reason is not None:
-                if args.align_fallback == "crop":
+                if args.align_fallback == "crop" and fallback_ok:
                     cx1, cy1, cx2, cy2 = [int(round(v)) for v in box]
                     crop = letterbox(image_np[cy1:cy2, cx1:cx2], args.align_size)
                     status = "unaligned"
                     print(f"  [unaligned] {filename}: {reason}")
                 else:
-                    status = "skipped"
+                    status = "no-subject" if box_source == "no-subject" else "skipped"
                     print(f"  [skip] {filename}: {reason}")
 
             if crop is not None:
@@ -468,7 +539,7 @@ def main(args):
                 exported.append(os.path.abspath(crop_path))
 
         row = {"filename": filename, "box": " ".join(f"{v:.1f}" for v in box),
-               "crop": status}
+               "box_source": box_source, "crop": status}
         for kp_name, (x, y), s in zip(KP_NAMES, coords, scores):
             row[f"{kp_name}_x"] = round(float(x), 2)
             row[f"{kp_name}_y"] = round(float(y), 2)
@@ -488,6 +559,20 @@ def main(args):
             writer.writerows(rows)
         print(f"Wrote {len(rows)} rows to {csv_path}")
 
+    # A no-subject frame still gets a CSV row and an overlay, so without this the only
+    # trace of it is one line buried in the per-image log.  Surface the count, and name
+    # the images while the list is short enough to act on by hand.
+    no_subject = [r["filename"] for r in rows if r["box_source"] == "no-subject"]
+    if no_subject:
+        print(f"\n[no-subject] {len(no_subject)}/{len(rows)} images had no detectable "
+              f"specimen; their keypoints are meaningless and no crop was exported.")
+        print("             Filter these out with box_source == 'no-subject', or supply "
+              "boxes by hand and re-run with --box-mode file.")
+        for f in no_subject[:20]:
+            print(f"               {f}")
+        if len(no_subject) > 20:
+            print(f"               ... and {len(no_subject) - 20} more")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__,
@@ -499,6 +584,16 @@ if __name__ == "__main__":
     parser.add_argument("--boxes", default="boxes.json", help="used with --box-mode file")
     parser.add_argument("--margin", type=float, default=0.15,
                         help="fraction to expand the auto-detected box by")
+    parser.add_argument("--roi-frac", type=float, default=0.6,
+                        help="with --box-mode auto, only consider blobs whose centre "
+                             "falls in this centred fraction of the frame; 1.0 searches "
+                             "everywhere.  Measured safe range on the current corpus is "
+                             "0.34-0.72: below that it starts rejecting real specimens, "
+                             "above it the off-centre litter comes back")
+    parser.add_argument("--roi-exempt-frac", type=float, default=0.05,
+                        help="blobs covering more than this fraction of the frame ignore "
+                             "--roi-frac; keeps a large obvious specimen that happens to "
+                             "sit off-centre.  Well above the largest debris seen (0.4%%)")
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--strict-device", action="store_true",
